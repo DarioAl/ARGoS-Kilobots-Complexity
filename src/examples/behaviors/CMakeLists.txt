@@ -71,14 +71,20 @@ if(ARGOS_BUILD_FOR_SIMULATOR)
   #
   # ARK loop function: demoC
   #
-  add_executable(forager forager.c)  
+  add_executable(forager forager.c)
   target_link_libraries(forager argos3plugin_simulator_kilolib)
 
   #
   # ARK loop function: clustering
   #
-  add_executable(clustering clustering.c)  
+  add_executable(clustering clustering.c)
   target_link_libraries(clustering argos3plugin_simulator_kilolib)
+
+  #
+  # ARK loop function: complexity
+  #
+  add_executable(complexity complexity.c)
+  target_link_libraries(complexity argos3plugin_simulator_kilolib)
 
   #
   # Debugging example
