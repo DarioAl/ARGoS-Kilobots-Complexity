@@ -39,8 +39,14 @@
 
 using namespace argos;
 
+#define SCALE_FACTOR 100 // to slow down utility update
+#define REDAREA 0
+#define GREENAREA 1
+
 class AreaALF {
  private:
+  UInt16 id; // area id
+
   /************************************/
   /* Area specific variables          */
   /************************************/

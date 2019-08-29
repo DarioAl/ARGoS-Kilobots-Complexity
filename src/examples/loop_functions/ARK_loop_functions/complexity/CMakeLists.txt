@@ -1,7 +1,12 @@
 include_directories(argos3/plugins/robot/kilobot/control_interface argos3/plugins/robot/kilobot/simulator)
 
-add_library(ALF_complexity_loop_function MODULE complexity_ALF.h complexity_ALF.cpp)
-add_library(CAreaALF area.h area.cpp)
+add_library(ALF_complexity_loop_function
+  MODULE
+  complexity_ALF.h
+  complexity_ALF.cpp
+  area.h
+  area.cpp
+)
 
 target_link_libraries(ALF_complexity_loop_function
   argos3core_simulator

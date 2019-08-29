@@ -106,7 +106,12 @@ void CComplexityALF::UpdateKilobotStates(){
   // update areas now
   this->resource_a->doStep(this->kilobotsInA);
   this->resource_b->doStep(this->kilobotsInB);
-}
+
+  std::cout << resource_a->population << std::endl;
+  std::cout << resource_b->population << std::endl;
+ }
+
+
 /****************************************/
 /* Update both kilobots and areas in the environment */
 /****************************************/
@@ -118,8 +123,9 @@ void CComplexityALF::UpdateKilobotState(CKilobotEntity &c_kilobot_entity){
   CVector2 cKilobotPosition = GetKilobotPosition(c_kilobot_entity);
 
   // distance from the center of resource a
-  Real aDistance = Distance(cKilobotPosition, resource_a->position);
-  if(aDistance < resource_a->radius){
+  if((pow(cKilobotPosition.GetX()-resource_a->position.GetX(),2) +
+      pow(cKilobotPosition.GetY()-resource_a->position.GetY(),2)) <
+     resource_a->radius){
     m_vecKilobotStates[unKilobotID]=INSIDE_AREA_A;
     ++this->kilobotsInA;
     return;
@@ -127,8 +133,9 @@ void CComplexityALF::UpdateKilobotState(CKilobotEntity &c_kilobot_entity){
 
   // distance from the center of resource b
   // this is done fore every kb, avoid this computation unless needed
-  Real bDistance = Distance(cKilobotPosition, resource_b->position);
-  if (bDistance < resource_b->radius){
+  if((pow(cKilobotPosition.GetX()-resource_b->position.GetX(),2) +
+      pow(cKilobotPosition.GetY()-resource_b->position.GetY(),2)) <
+     resource_b->radius){
     m_vecKilobotStates[unKilobotID]=INSIDE_AREA_B;
     ++this->kilobotsInB;
     return;
@@ -196,13 +203,16 @@ void CComplexityALF::UpdateVirtualSensor(CKilobotEntity &c_kilobot_entity){
 /****************************************/
 
 CColor CComplexityALF::GetFloorColor(const CVector2 &vec_position_on_plane) {
-  Real fPositionX(vec_position_on_plane.GetX()),fPositionY(vec_position_on_plane.GetY());
   CColor cColor=CColor::WHITE;
-  if((pow(fPositionX-resource_a->position.GetX(),2)+pow(fPositionY-resource_a->position.GetY(),2))<pow(resource_a->radius,2)){
+  if((pow(vec_position_on_plane.GetX()-resource_a->position.GetX(),2) +
+      pow(vec_position_on_plane.GetY()-resource_a->position.GetY(),2)) <
+     resource_a->radius){
     cColor=resource_a->color;
     return cColor;
   }
-  if((pow(fPositionX-resource_b->position.GetX(),2)+pow(fPositionY-resource_b->position.GetY(),2))<pow(resource_b->radius,2)){
+  if((pow(vec_position_on_plane.GetX()-resource_b->position.GetX(),2) +
+      pow(vec_position_on_plane.GetY()-resource_b->position.GetY(),2)) <
+     resource_b->radius){
     cColor=resource_b->color;
     return cColor;
   }
