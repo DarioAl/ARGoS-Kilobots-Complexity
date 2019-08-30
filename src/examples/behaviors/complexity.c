@@ -53,15 +53,16 @@ typedef enum {
 
 /* enum for the robot states */
 typedef enum {
-              OUTSIDE_CLUSTERING_HUB = 0,
-              INSIDE_CLUSTERING_HUB = 1,
-} action_t;
+              OUTSIDE_AREA=0,
+              INSIDE_AREA_A=1,
+              INSIDE_AREA_B=2,
+}action_t;
 
 /* current motion type */
 motion_t current_motion_type = STOP;
 
 /* current state */
-action_t current_state = OUTSIDE_CLUSTERING_HUB;
+action_t current_state = OUTSIDE_AREA;
 
 /* counters for motion, turning and random_walk */
 uint32_t last_turn_ticks = 0;
@@ -120,12 +121,10 @@ void set_motion( motion_t new_motion_type ) {
 
 /*-------------------------------------------------------------------*/
 /* Callback function for message reception                           */
+/* as in the complexity_ALF.cpp there are 3 kilobots messages per    */
+/* message with 3 different kilobots ids.
 /*-------------------------------------------------------------------*/
 void rx_message(message_t *msg, distance_measurement_t *d) {
-  //TODO DARIO change it as following
-  //if over a resources communicate, store and keep going withouth changing the state of the KB
-  //the KB changes its state by itself
-
     if (msg->type == 0) {
         // unpack message
         int id1 = msg->data[0] << 2 | (msg->data[1] >> 6);
@@ -153,8 +152,7 @@ void rx_message(message_t *msg, distance_measurement_t *d) {
             new_sa_msg = true;
         }
 
-    }
-    else if (msg->type == 120) {
+    } else if(msg->type == 120) {
         int id = (msg->data[0] << 8) | msg->data[1];
         if (id == kilo_uid) {
             set_color(RGB(0,0,3));
@@ -162,20 +160,28 @@ void rx_message(message_t *msg, distance_measurement_t *d) {
             set_color(RGB(3,0,0));
         }
     }
+
+    // we do have a new message, check the payload
     if(new_sa_msg==true){
-        if((sa_type==0)&&(current_state==INSIDE_CLUSTERING_HUB)){
-            current_state=OUTSIDE_CLUSTERING_HUB;
-            set_motion(FORWARD);
-            last_motion_ticks=kilo_ticks;
-            set_color(RGB(0,0,0));
+      if(current_state == OUTSIDE_AREA) {
+        if((sa_type==1)) {
+          current_state = INSIDE_AREA_A;
+          set_motors(0,0);
+          set_motion(STOP);
+          set_color(RGB(3,0,0));
+        } else if (sa_type==2) {
+          current_state = INSIDE_AREA_A;
+          set_motors(0,0);
+          set_motion(STOP);
+          set_color(RGB(0,3,0));
         }
-        if((sa_type==1)&&(current_state==OUTSIDE_CLUSTERING_HUB)){
-            current_state=INSIDE_CLUSTERING_HUB;
-            set_motors(0,0);
-            set_motion(STOP);
-            set_color(RGB(3,0,0));
-        }
-        new_sa_msg = false;
+      } else if((sa_type==0) && (current_state==INSIDE_AREA_A || current_state==INSIDE_AREA_B)) {
+        current_state=OUTSIDE_AREA;
+        set_motion(FORWARD);
+        last_motion_ticks=kilo_ticks;
+        set_color(RGB(0,0,0));
+      }
+      new_sa_msg = false;
     }
 }
 

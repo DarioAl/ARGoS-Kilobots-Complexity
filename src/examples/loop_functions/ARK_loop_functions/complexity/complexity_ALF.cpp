@@ -29,7 +29,6 @@ void CComplexityALF::Init(TConfigurationNode& t_node) {
 /****************************************/
 
 void CComplexityALF::Reset() {
-  /* Close data file */
   m_cOutput.close();
   /* Reopen the file, erasing its contents */
   m_cOutput.open(m_strOutputFileName, std::ios_base::trunc | std::ios_base::out);
@@ -39,6 +38,8 @@ void CComplexityALF::Reset() {
 /****************************************/
 
 void CComplexityALF::Destroy() {
+  delete resource_a;
+  delete resource_b;
   /* Close data file */
   m_cOutput.close();
 }
@@ -90,9 +91,10 @@ void CComplexityALF::GetExperimentVariables(TConfigurationNode& t_tree){
   GetNodeAttributeOrDefault(tExperimentVariablesNode, "timeforonemessage", m_fTimeForAMessage, m_fTimeForAMessage);
 }
 
-/***************************************i*******/
+/***********************************************/
 /* Override ALF function to enable areas update */
 /***********************************************/
+
 void CComplexityALF::UpdateKilobotStates(){
   // resets kbs positions
   this->kilobotsInA = 0;
@@ -113,7 +115,7 @@ void CComplexityALF::UpdateKilobotStates(){
 
 
 /****************************************/
-/* Update both kilobots and areas in the environment */
+/* Update both kilobots positions and areas in the environment */
 /****************************************/
 
 void CComplexityALF::UpdateKilobotState(CKilobotEntity &c_kilobot_entity){
@@ -147,23 +149,27 @@ void CComplexityALF::UpdateKilobotState(CKilobotEntity &c_kilobot_entity){
 }
 
 /****************************************/
+/* Actual update of the kbs sensors     */
 /****************************************/
 
 void CComplexityALF::UpdateVirtualSensor(CKilobotEntity &c_kilobot_entity){
   /*Create ARK-type messages variables*/
   m_tALFKilobotMessage tKilobotMessage,tEmptyMessage,tMessage;
+
   /* Flag for existance of message to send*/
-  bool bMessageToSend=false;
+  bool bMessageToSend = false;
+
   /* Get the kilobot ID and state (Only Position in this example) */
-  UInt16 unKilobotID=GetKilobotId(c_kilobot_entity);
+  UInt16 unKilobotID = GetKilobotId(c_kilobot_entity);
+
   /* check if enough time has passed from the last message otherwise*/
-  if (m_fTimeInSeconds - m_vecLastTimeMessaged[unKilobotID]< m_fMinTimeBetweenTwoMsg){
+  if(m_fTimeInSeconds - m_vecLastTimeMessaged[unKilobotID]< m_fMinTimeBetweenTwoMsg) {
     return; // if the time is too short, the kilobot cannot receive a message
-  }
-  else{
+  } else {
     /*  Prepare the inividual kilobot's message */
-    tKilobotMessage.m_sID = unKilobotID;
-    tKilobotMessage.m_sType = (int)m_vecKilobotStates[unKilobotID];
+    tKilobotMessage.m_sID = unKilobotID; // kilobot id
+    tKilobotMessage.m_sType = (int)m_vecKilobotStates[unKilobotID]; // tell the kilobot if it is over a resource
+
     /*  Set the message sending flag to True */
     bMessageToSend=true;
     m_vecLastTimeMessaged[unKilobotID] = m_fTimeInSeconds;
@@ -171,30 +177,31 @@ void CComplexityALF::UpdateVirtualSensor(CKilobotEntity &c_kilobot_entity){
 
   /* Send the message to the kilobot using the ARK messaging protocol (addressing 3 kilobots per one standard kilobot message)*/
   if(bMessageToSend){
-    for (int i = 0; i < 9; ++i) {
-      m_tMessages[unKilobotID].data[i]=0;
+    for(int i=0; i<9; ++i) {
+      m_tMessages[unKilobotID].data[i] = 0;
     }
+
     // Prepare an empty ARK-type message to fill the gap in the full kilobot message
     tEmptyMessage.m_sID=1023;
     tEmptyMessage.m_sType=0;
     tEmptyMessage.m_sData=0;
+
     // Fill the kilobot message by the ARK-type messages
-    for (int i = 0; i < 3; ++i) {
-      if( i == 0){
+    for(int i=0; i<3; ++i) {
+      if(i==0) {
         tMessage = tKilobotMessage;
-      } else{
+      } else {
         tMessage = tEmptyMessage;
       }
-      m_tMessages[unKilobotID].data[i*3] = (tMessage.m_sID >> 2);
-      m_tMessages[unKilobotID].data[1+i*3] = (tMessage.m_sID << 6);
+      m_tMessages[unKilobotID].data[i*3] = (tMessage.m_sID >> 2); // 2nd kb
+      m_tMessages[unKilobotID].data[1+i*3] = (tMessage.m_sID << 6); // 3rd kb
       m_tMessages[unKilobotID].data[1+i*3] = m_tMessages[unKilobotID].data[1+i*3] | (tMessage.m_sType << 2);
       m_tMessages[unKilobotID].data[1+i*3] = m_tMessages[unKilobotID].data[1+i*3] | (tMessage.m_sData >> 8);
       m_tMessages[unKilobotID].data[2+i*3] = tMessage.m_sData;
     }
-    /* Sending the message */
+    /* Sending the message using the overhead controller */
     GetSimulator().GetMedium<CKilobotCommunicationMedium>("kilocomm").SendOHCMessageTo(c_kilobot_entity,&m_tMessages[unKilobotID]);
-  }
-  else{
+  } else {
     GetSimulator().GetMedium<CKilobotCommunicationMedium>("kilocomm").SendOHCMessageTo(c_kilobot_entity,NULL);
   }
 }
