@@ -170,6 +170,14 @@ void CComplexityALF::UpdateVirtualSensor(CKilobotEntity &c_kilobot_entity){
     tKilobotMessage.m_sID = unKilobotID; // kilobot id
     tKilobotMessage.m_sType = (int)m_vecKilobotStates[unKilobotID]; // tell the kilobot if it is over a resource
 
+    // /* add information about the area the kb is over */
+    // if((int)m_vecKilobotStates[unKilobotID] == 1) {
+    //   // the utility is between 0 and 1. transform it to an integer here
+    //   tKilobotMessage.m_sData = (int)(resource_a->population*10000);
+    // } else {
+    //   tKilobotMessage.m_sData = (int)(resource_b->population*10000);
+    // }
+
     /*  Set the message sending flag to True */
     bMessageToSend=true;
     m_vecLastTimeMessaged[unKilobotID] = m_fTimeInSeconds;
@@ -193,8 +201,8 @@ void CComplexityALF::UpdateVirtualSensor(CKilobotEntity &c_kilobot_entity){
       } else {
         tMessage = tEmptyMessage;
       }
-      m_tMessages[unKilobotID].data[i*3] = (tMessage.m_sID >> 2); // 2nd kb
-      m_tMessages[unKilobotID].data[1+i*3] = (tMessage.m_sID << 6); // 3rd kb
+      m_tMessages[unKilobotID].data[i*3] = (tMessage.m_sID >> 2);
+      m_tMessages[unKilobotID].data[1+i*3] = (tMessage.m_sID << 6);
       m_tMessages[unKilobotID].data[1+i*3] = m_tMessages[unKilobotID].data[1+i*3] | (tMessage.m_sType << 2);
       m_tMessages[unKilobotID].data[1+i*3] = m_tMessages[unKilobotID].data[1+i*3] | (tMessage.m_sData >> 8);
       m_tMessages[unKilobotID].data[2+i*3] = tMessage.m_sData;
