@@ -109,8 +109,8 @@ void CComplexityALF::UpdateKilobotStates(){
   this->resource_a->doStep(this->kilobotsInA);
   this->resource_b->doStep(this->kilobotsInB);
 
-  std::cout << resource_a->population << std::endl;
-  std::cout << resource_b->population << std::endl;
+  // std::cout << resource_a->population << std::endl;
+  // std::cout << resource_b->population << std::endl;
  }
 
 
@@ -153,65 +153,61 @@ void CComplexityALF::UpdateKilobotState(CKilobotEntity &c_kilobot_entity){
 /****************************************/
 
 void CComplexityALF::UpdateVirtualSensor(CKilobotEntity &c_kilobot_entity){
-  /*Create ARK-type messages variables*/
-  m_tALFKilobotMessage tKilobotMessage,tEmptyMessage,tMessage;
-
   /* Flag for existance of message to send*/
   bool bMessageToSend = false;
 
-  /* Get the kilobot ID and state (Only Position in this example) */
-  UInt16 unKilobotID = GetKilobotId(c_kilobot_entity);
+  // get kb id
+  UInt8 unKilobotID = (UInt8) GetKilobotId(c_kilobot_entity); // get kb id
 
   /* check if enough time has passed from the last message otherwise*/
   if(m_fTimeInSeconds - m_vecLastTimeMessaged[unKilobotID]< m_fMinTimeBetweenTwoMsg) {
-    return; // if the time is too short, the kilobot cannot receive a message
+    // if the time is too short, the kilobot cannot receive a message
+    return;
   } else {
-    /*  Prepare the inividual kilobot's message */
-    tKilobotMessage.m_sID = unKilobotID; // kilobot id
-    tKilobotMessage.m_sType = (int)m_vecKilobotStates[unKilobotID]; // tell the kilobot if it is over a resource
+    // Fill the 9bytes of the message payload as this:
+    // 7th and 8th are free
 
-    // /* add information about the area the kb is over */
-    // if((int)m_vecKilobotStates[unKilobotID] == 1) {
-    //   // the utility is between 0 and 1. transform it to an integer here
-    //   tKilobotMessage.m_sData = (int)(resource_a->population*10000);
-    // } else {
-    //   tKilobotMessage.m_sData = (int)(resource_b->population*10000);
-    // }
+    // 1st byte for kb state
+    UInt8 state = (UInt8) m_vecKilobotStates[unKilobotID]; // retrieve kb status
 
-    /*  Set the message sending flag to True */
-    bMessageToSend=true;
+    // 2nd-3rd bytes for x coordinate
+    // 4th-5th bytes for y coordinate
+    CVector2 kb_position = GetKilobotPosition(c_kilobot_entity);
+    UInt16 x_coord = (UInt16) (kb_position.GetX()*1000);
+    UInt16 y_coord = (UInt16) (kb_position.GetY()*1000);
+
+    // 6th byte for area pop (normalazed between [0-255])
+    UInt8 area_pop = 255;
+    if(state == SRobotState::INSIDE_AREA_A) {
+      area_pop = (UInt8) resource_a->population*255; // pop is between [0,1]
+    } else if(state == SRobotState::INSIDE_AREA_B) {
+      area_pop = (UInt8) resource_b->population*255; // pop is between [0,1]
+    }
+
+    /* Prepare the inividual kilobot's message */
+    m_tMessages[unKilobotID].type = 0; // using type 0 to signal ark messages
+    /* Save time for next messages */
     m_vecLastTimeMessaged[unKilobotID] = m_fTimeInSeconds;
-  }
 
-  /* Send the message to the kilobot using the ARK messaging protocol (addressing 3 kilobots per one standard kilobot message)*/
-  if(bMessageToSend){
-    for(int i=0; i<9; ++i) {
-      m_tMessages[unKilobotID].data[i] = 0;
-    }
+    /* Fill up the kb message */
+    m_tMessages[unKilobotID].data[0] = unKilobotID;
+    m_tMessages[unKilobotID].data[1] = state;
+    // fill up the message of uint8 by splitting the uin16
+    m_tMessages[unKilobotID].data[2] = (x_coord >> 8); // hi part of the uint16
+    m_tMessages[unKilobotID].data[3] = (x_coord & 0xff); // lo part of the uint16
+    m_tMessages[unKilobotID].data[4] = (y_coord >> 8); // hi part of the uint16
+    m_tMessages[unKilobotID].data[5] = (y_coord & 0xff); // lo part of the uint16
+    m_tMessages[unKilobotID].data[6] = area_pop;
+    // to concatenate back use
+    // UInt16 ycord = (((UInt16)data[4] << 8) | data[5]);
 
-    // Prepare an empty ARK-type message to fill the gap in the full kilobot message
-    tEmptyMessage.m_sID=1023;
-    tEmptyMessage.m_sType=0;
-    tEmptyMessage.m_sData=0;
+    // TODO set crc
+    // m_tMessages[unKilobotID].crc = message_crc(&m_tMessages[unKilobotID]); // set receiver id
 
-    // Fill the kilobot message by the ARK-type messages
-    for(int i=0; i<3; ++i) {
-      if(i==0) {
-        tMessage = tKilobotMessage;
-      } else {
-        tMessage = tEmptyMessage;
-      }
-      m_tMessages[unKilobotID].data[i*3] = (tMessage.m_sID >> 2);
-      m_tMessages[unKilobotID].data[1+i*3] = (tMessage.m_sID << 6);
-      m_tMessages[unKilobotID].data[1+i*3] = m_tMessages[unKilobotID].data[1+i*3] | (tMessage.m_sType << 2);
-      m_tMessages[unKilobotID].data[1+i*3] = m_tMessages[unKilobotID].data[1+i*3] | (tMessage.m_sData >> 8);
-      m_tMessages[unKilobotID].data[2+i*3] = tMessage.m_sData;
-    }
     /* Sending the message using the overhead controller */
     GetSimulator().GetMedium<CKilobotCommunicationMedium>("kilocomm").SendOHCMessageTo(c_kilobot_entity,&m_tMessages[unKilobotID]);
-  } else {
-    GetSimulator().GetMedium<CKilobotCommunicationMedium>("kilocomm").SendOHCMessageTo(c_kilobot_entity,NULL);
   }
+
 }
 
 /****************************************/

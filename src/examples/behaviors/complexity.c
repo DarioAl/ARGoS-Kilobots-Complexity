@@ -37,14 +37,11 @@ typedef enum {
 motion_t current_motion_type = STOP;
 
 /* counters for motion, turning and random_walk */
-uint32_t last_turn_ticks = 0;
 uint32_t turn_ticks = 60;
 unsigned int turning_ticks = 0;
 const uint8_t max_turning_ticks = 160; /* constant to allow a maximum rotation of 180 degrees with \omega=\pi/5 */
 const uint16_t max_straight_ticks = 320; /* set the \tau_m period to 2.5 s: n_m = \tau_m/\delta_t = 2.5/(1/32) */
 uint32_t last_motion_ticks = 0;
-uint32_t turn_into_random_walker_ticks = 160; /* timestep to wait without any direction message before turning into random_walker */
-uint32_t last_direction_msg = 0;
 
 
 /*-------------------------------------------------------------------*/
@@ -61,11 +58,28 @@ typedef enum {
 /* current state */
 arena_t current_state = OUTSIDE_AREA;
 
-/* Variables for Smart Arena messages */
-int sa_type = 3; // 0,1,2 -> outside,in A, in B
-int sa_payload = 0;
-bool new_sa_msg = false; // true if there is a new message to unpack
+/* pair of coordinates */
+typedef struct arena_coordinates arena_coordinates;
+struct arena_coordinates {
+  // not expressed as in the argos arena
+  // x and y are multiplied by 1k
+  u_int16_t x; // approximated position
+  u_int16_t y; // approximated position
+};
 
+/* area information */
+typedef  struct arena_area arena_area;
+struct arena_area {
+  u_int8_t id;
+  u_int8_t pop; // normalized between 0-255
+};
+
+/* Variables for Smart Arena messages */
+u_int8_t sent_message = 0;
+u_int8_t sa_type = 0; // 0,1,2 -> outside,in A, in B
+arena_area resource_a; // keep local knowledge about resources
+arena_area resource_b; // keep local knowledge about resources
+arena_coordinates my_coordinates; // current kb coordinates in the arena
 
 /*-------------------------------------------------------------------*/
 /* Decision Making                                                   */
@@ -80,34 +94,29 @@ typedef enum {
               INHIBITION = 4,
 } decision_t;
 
-/* pair of coordinates */
-typedef struct arena_coordinates arena_coordinates;
-struct arena_coordinates {
-  float x;
-  float y;
-};
-
 /* local knowledge about a kilobot */
 typedef struct local_knowledge local_knowledge;
 struct local_knowledge {
-  int kb_id; // id of the kb to which the knowledge corresponds
   decision_t process; // its last process (used for interactions)
   arena_t state; // kilbots state (in whiche area?)
   arena_coordinates coordinates; // its location
+  u_int32_t timestamp; // used for time validation (discard old information)
 };
+
+/* the whole local knowledge about other kbs */
+/* the index is the id */
+local_knowledge the_local_knowledge[100];
 
 /* current decions */
 decision_t current_decision = NONE;
 /* to share kilobots local knowledge */
-message_t* interactive_message;
+message_t interactive_message;
 
 
 /*-------------------------------------------------------------------*/
 /* Function for setting the motor speed                              */
 /*-------------------------------------------------------------------*/
 void set_motion( motion_t new_motion_type ) {
-  //TODO DARIO keep as it is
-
     bool calibrated = true;
     if ( current_motion_type != new_motion_type ){
         switch( new_motion_type ) {
@@ -153,108 +162,91 @@ void set_motion( motion_t new_motion_type ) {
 /* and a CRC (2 bytes).                                              */
 /*-------------------------------------------------------------------*/
 
-void rx_message(message_t *msg, distance_measurement_t *d) {
-  if(msg->crc == 0) {
-    /* ----------------------------------*/
-    // no valid message received
-    /* ----------------------------------*/
-    new_sa_msg = false;
+void message_rx(message_t *msg, distance_measurement_t *d) {
+  // get id (always firt byte)
+  u_int8_t id = msg->data[0];
 
-  } else if (msg->type == 0) {
-
+  if(msg->type == 0) {
     /* ----------------------------------*/
-    // parse ARK message
+    // smart arena message
     /* ----------------------------------*/
-    // unpack message, there are 3 kbs message in an ark messages
-    // shift left and right and bitwise OR operator
-    int id1 = msg->data[0] << 2 | (msg->data[1] >> 6);
-    int id2 = msg->data[3] << 2 | (msg->data[4] >> 6);
-    int id3 = msg->data[6] << 2 | (msg->data[7] >> 6);
 
-    if (id1 == kilo_uid) {
-      // unpack type
-      sa_type = msg->data[1] >> 2 & 0x0F;
-      // unpack payload
-      sa_payload = ((msg->data[1]&0b11) << 8) | (msg->data[2]);
-      new_sa_msg = true;
-    }
-    if (id2 == kilo_uid) {
-      // unpack type
-      sa_type = msg->data[4] >> 2 & 0x0F;
-      // unpack payload
-      sa_payload = ((msg->data[4]&0b11)  << 8) | (msg->data[5]);
-      new_sa_msg = true;
-    }
-    if (id3 == kilo_uid) {
-      // unpack type
-      sa_type = msg->data[7] >> 2 & 0x0F;
-      // unpack payload
-      sa_payload = ((msg->data[7]&0b11)  << 8) | (msg->data[8]);
-      new_sa_msg = true;
-    }
+    if(id == kilo_uid) {
+      // the smart arena type is where the kb is
+      // can be NONE, RESOURCE_A and RESOURCE_B
+      sa_type = (msg->data[1]); // get arena position
 
-    if(new_sa_msg==true){
-      // we do have a new message from ARK, check the payload
-      if(current_state == OUTSIDE_AREA) {
-        if((sa_type==1)) {
-          current_state = INSIDE_AREA_A;
-          // stop and exploit
-          set_motors(0,0);
-          set_motion(STOP);
-          // set color for area A
-          set_color(RGB(3,0,0));
-        } else if (sa_type==2) {
-          current_state = INSIDE_AREA_B;
-          // stop and exploit
-          set_motors(0,0);
-          set_motion(STOP);
-          // set color of area B
-          set_color(RGB(0,3,0));
-        }
-      } else if((sa_type==0)) {
-        current_state=OUTSIDE_AREA;
+      if(sa_type == INSIDE_AREA_A) {
+        resource_a.pop = msg->data[5]; // update area pop
+      } else if (sa_type == INSIDE_AREA_B) {
+        resource_b.pop = msg->data[5]; // update area pop
+      }
+
+      // get arena coordinates
+      my_coordinates.x = ((msg->data[2]&0b11) << 8) | (msg->data[3]);
+      my_coordinates.y = ((msg->data[4]&0b11) << 8) | (msg->data[5]);
+
+      if(sa_type == INSIDE_AREA_A) {
+        // set color for area A red
+        set_color(RGB(3,0,0));
+        // stop and exploit
+        set_motors(0,0);
+        set_motion(STOP);
+      } else if(sa_type == INSIDE_AREA_B) {
+        // set color for area B green
+        set_color(RGB(0,3,0));
+        // stop and exploit
+        set_motors(0,0);
+        set_motion(STOP);
+      } else if(sa_type == OUTSIDE_AREA) {
+        current_state = OUTSIDE_AREA;
         // search for something
         set_motion(FORWARD);
         last_motion_ticks=kilo_ticks;
-        // set color for uncommitted
-        set_color(RGB(3,3,3));
       }
-      new_sa_msg = false;
+    }
+  } else if(msg->type == 1) {
+    /* ----------------------------------*/
+    // KB interactive message
+    /* ----------------------------------*/
+
+    if(id != kilo_uid) {
+      // check for valid crc
+      if(msg->crc == message_crc(msg)) {
+        // gather information about other kbs
+        // where it is?
+        the_local_knowledge[id].state = msg->data[1];
+        // get arena coordinates
+        the_local_knowledge[id].coordinates.x = ((msg->data[2]&0b11) << 8) | (msg->data[3]);
+        the_local_knowledge[id].coordinates.y = ((msg->data[4]&0b11) << 8) | (msg->data[5]);
+        // get process (for interactive processes)
+        the_local_knowledge[id].process = msg->data[6];
+        // update timestamp
+        the_local_knowledge[id].timestamp = kilo_ticks;
+
+        set_color(RGB(3,3,3));
+
+      }
     }
   }
-  /* } else if (msg->type == 1) { */
-  /*   std::cout << " woooooooo msg type 1" << std::endl; */
-  /*   /\* ----------------------------------*\/ */
-  /*   // parse KB interactive message */
-  /*   /\* ----------------------------------*\/ */
-
-  /*   // custom data structure per byte */
-  /*   // [ 1,  2, 3, 4, 5, 6, 7, 8, 9] */
-  /*   // [id, id, x, x, y, y, r, c, s] */
-
-  /*   // two bytes for the int id */
-  /*   //TODO sta roba sicuro non funziona */
-  /*   int id = (msg->data[0] << 2) | (msg->data[1] >> 6); */
-  /*   // two bytes for the int position x */
-  /*   int oth_x = (msg->data[2] << 2) | (msg->data[3] >> 6); */
-  /*   // two bytes for the int position y */
-  /*   int oth_y = (msg->data[4] << 2) | (msg->data[5] >> 6); */
-  /*   // which process ID? */
-  /*   unsigned char recruitment = msg->data[6]; */
-  /*   unsigned char cross = msg->data[7]; */
-  /*   unsigned char self = msg->data[8]; */
-  /* } */
 }
 
 
 /*-------------------------------------------------------------------*/
 /* Send current kb status to the swarm                               */
 /*-------------------------------------------------------------------*/
-message_t *tx_message() {
+message_t *message_tx() {
   /* this one is filled during the decision process */
   return &interactive_message;
 }
 
+/*-------------------------------------------------------------------*/
+/* successful transmission callback                                  */
+/*-------------------------------------------------------------------*/
+void message_tx_success() {
+  set_motors(0,0);
+  sent_message = 1;
+}
 
 /*-------------------------------------------------------------------*/
 /* Decision Making Function                                          */
@@ -262,7 +254,8 @@ message_t *tx_message() {
 /*-------------------------------------------------------------------*/
 void take_decision() {
   // no valid interactive process yet, set crc to 0
-  interactive_message->crc = 0;
+  /* interactive_message.crc = 0; */
+  /* interactive_message.type = 1; */
 
   // get current area utility if any
 
@@ -272,15 +265,26 @@ void take_decision() {
   // if uncommitted
   // spontaneous commitment process through discovery
   // rectruitmet
+  // una volta reclutato vai in cerca dell'area A e finche' non la trovi non fai altro
 
   //if committed
   // spontaneous abandon process
   // cross-inhibition
 
 
-  // fill up the message
-  interactive_message;
+  /* Fill up the kb message */
+  /* interactive_message.data[0] = kilo_uid; */
+  /* interactive_message.data[1] = current_state; */
+  /* // fill up the message of uint8 by splitting the uin16 */
+  /* interactive_message.data[2] = (my_coordinates.x >> 8); // hi part of the uint16 */
+  /* interactive_message.data[3] = (my_coordinates.x & 0xff); // lo part of the uint16 */
+  /* interactive_message.data[4] = (my_coordinates.y >> 8); // hi part of the uint16 */
+  /* interactive_message.data[5] = (my_coordinates.y & 0xff); // lo part of the uint16 */
+  /* u_int8_t area_pop = 1; */
+  /* interactive_message.data[6] = area_pop; */
 
+  /* // fill up the crc */
+  /* interactive_message.crc = message_crc(&interactive_message); */
 }
 
 
@@ -330,7 +334,7 @@ void random_walk(){
 /*-------------------------------------------------------------------*/
 void setup() {
     /* Initialise LED and motors */
-    set_color(RGB(3,3,3));
+    set_color(RGB(0,0,0));
     set_motors(0,0);
 
     /* Initialise random seed */
@@ -348,23 +352,41 @@ void setup() {
 /* Main loop                                                         */
 /*-------------------------------------------------------------------*/
 void loop() {
-  // take decision
-  take_decision();
+  /* set_color(RGB(0,0,0)); */
+  /* delay(250); */
 
-  if(current_decision == COMMITTMENT || current_decision == RECRUITMENT) {
-    // TODO go to selected area ASAP
-    random_walk();
-  } else if(current_decision == ABANDONDONMENT || current_decision == INHIBITION) {
-    // TODO leave the area ASAP
-    random_walk();
-  } else if(current_decision == NONE) {
-    random_walk();
+  interactive_message.data[0] = 0;
+  interactive_message.type = NORMAL;
+  interactive_message.crc = message_crc(&interactive_message);
+
+  if(sent_message) {
+    sent_message = 0;
+    set_color(RGB(0,0,1));
   }
+
+  // take decision
+  /* take_decision(); */
+
+  /* if(current_decision == COMMITTMENT || current_decision == RECRUITMENT) { */
+  /*   // TODO go to selected area ASAP */
+  /*   random_walk(); */
+  /* } else if(current_decision == ABANDONDONMENT || current_decision == INHIBITION) { */
+  /*   // TODO leave the area ASAP */
+  /*   random_walk(); */
+  /* } else if(current_decision == NONE) { */
+  /*   random_walk(); */
+  /* } */
 }
 
 int main() {
   kilo_init();
-  kilo_message_rx = rx_message;
+  // register message reception callback
+  kilo_message_rx = message_rx;
+  // register message transmission callback
+  kilo_message_tx = message_tx;
+  // register tranmsission success callback
+  kilo_message_tx_success = message_tx_success;
+
   kilo_start(setup, loop);
 
   return 0;

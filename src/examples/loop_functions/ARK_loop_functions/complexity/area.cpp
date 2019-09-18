@@ -38,7 +38,7 @@ AreaALF::AreaALF(UInt8 id, TConfigurationNode& t_tree) {
 }
 
 bool AreaALF::doStep(UInt8 kilobotsInArea) {
-  std::cout << "OMG kilobots in " << id << " are " << kilobotsInArea << std::endl;
+  // std::cout << "OMG kilobots in " << id << " are " << kilobotsInArea << std::endl;
 
   //logistic growth
   population += (eta*population*((1-population)/k))/SCALE_FACTOR;
