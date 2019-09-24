@@ -54,12 +54,10 @@
             timeforonemessage="0.05">
         </variables>
 
-        <environments>
+        <environments area_radius="0.005" areas_per_type="10">
           <Area
               id="0"
-              position="0.45,0.45"
-              radius="0.15"
-              population="0.05"
+              population="1"
               color="255,0,0,255"
               eta="1"
               k="1"
@@ -69,9 +67,7 @@
           </Area>
           <Area
               id="1"
-              position="-0.45,-0.45"
-              radius="0.1"
-              population="0.05"
+              population="1"
               color="0,255,0,255"
               eta="1"
               k="1"
@@ -81,8 +77,8 @@
           </Area>
         </environments>
 
-
     </loop_functions>
+
     <!-- *********************** -->
     <!-- * Arena configuration * -->
     <!-- *********************** -->

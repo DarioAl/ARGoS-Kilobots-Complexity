@@ -7,8 +7,10 @@
  */
 
 #include "kilolib.h"
+
 #include <stdlib.h>
-#include<stdio.h>
+#include <stdio.h>
+#include <limits.h>
 
 /*-------------------------------------------------------------------*/
 /* General Variables                                                 */
@@ -41,8 +43,7 @@ uint32_t turn_ticks = 60;
 unsigned int turning_ticks = 0;
 const uint8_t max_turning_ticks = 160; /* constant to allow a maximum rotation of 180 degrees with \omega=\pi/5 */
 const uint16_t max_straight_ticks = 320; /* set the \tau_m period to 2.5 s: n_m = \tau_m/\delta_t = 2.5/(1/32) */
-uint32_t last_motion_ticks = 0;
-
+uint32_t last_decision_ticks = 0;
 
 /*-------------------------------------------------------------------*/
 /* Smart Arena Variables                                             */
@@ -50,9 +51,11 @@ uint32_t last_motion_ticks = 0;
 
 /* enum for the robot states */
 typedef enum {
-              OUTSIDE_AREA=0,
-              INSIDE_AREA_A=1,
-              INSIDE_AREA_B=2,
+              OUTSIDE_AREA=0, // over no area
+              INSIDE_AREA_A=1, // over (not working on) area a
+              INSIDE_AREA_B=2, // over (not working on) area b
+              COMMITTED_AREA_A=3, // working on area a
+              COMMITTED_AREA_B=4, // working on area b
 } arena_t;
 
 /* current state */
@@ -89,28 +92,44 @@ arena_coordinates my_coordinates; // current kb coordinates in the arena
 typedef enum {
               NONE = 0,
               COMMITTMENT = 1,
-              ABANDONDONMENT = 2,
-              RECRUITMENT = 3,
-              INHIBITION = 4,
+              ABANDON = 2,
+              RECRUITMENT_A = 3, // recruitment over resource a
+              RECRUITMENT_B = 4, // recruitment over resource b
+              INHIBITION_A = 5, // inhibition over resource a
+              INHIBITION_B = 6, // inhibition over resource b
 } decision_t;
+
+/* area exploitation threshold, when to stop exploitation */
+u_int8_t area_exploitation_threshold = 0.5*255;
+
+/* processes variables */
+float k = 0.4;
+float h = 0.4;
 
 /* local knowledge about a kilobot */
 typedef struct local_knowledge local_knowledge;
 struct local_knowledge {
-  decision_t process; // its last process (used for interactions)
   arena_t state; // kilbots state (in whiche area?)
+  u_int8_t area_pop; // perceived utility of the area
   arena_coordinates coordinates; // its location
   u_int32_t timestamp; // used for time validation (discard old information)
 };
-
 /* the whole local knowledge about other kbs */
 /* the index is the id */
-local_knowledge the_local_knowledge[100];
+u_int8_t num_of_kbs = 25;
+local_knowledge the_local_knowledge[25];
 
 /* current decions */
 decision_t current_decision = NONE;
 /* to share kilobots local knowledge */
 message_t interactive_message;
+
+/* explore for a bit, estimate the pop and then take a decision */
+u_int32_t last_decision_tick = 0; /* when last decision was taken */
+uint32_t exploration_ticks = 250; /* take a decision only after exploring the environment */
+
+/* local knowledge validation period, exploration ticks doubled*/
+u_int32_t knowledge_not_valid_after = 250*2; // in ticks
 
 
 /*-------------------------------------------------------------------*/
@@ -149,6 +168,20 @@ void set_motion( motion_t new_motion_type ) {
     }
 }
 
+/*-------------------------------------------------------------------*/
+/* Merge received information about the population of the area on    */
+/* which the kb is on. Kilobots can only perceive locally and try to */
+/* estimate the population of a resource                             */
+/*-------------------------------------------------------------------*/
+void merge_scan(u_int8_t sa_type, u_int8_t area_pop) {
+  // TODO sta roba fa schifo. C'e' un problema concettuale rispetto all'intero framework
+  // studiato fino ad ora
+  if(sa_type == INSIDE_AREA_A) {
+  resource_a.pop += area_pop; // update area pop
+ } else if (sa_type == INSIDE_AREA_B) {
+  resource_b.pop += area_pop; // update area pop
+ }
+}
 
 /*-------------------------------------------------------------------*/
 /* Callback function for message reception                           */
@@ -168,7 +201,7 @@ void message_rx(message_t *msg, distance_measurement_t *d) {
 
   if(msg->type == 0) {
     /* ----------------------------------*/
-    // smart arena message
+    /* smart arena message               */
     /* ----------------------------------*/
 
     if(id == kilo_uid) {
@@ -176,11 +209,8 @@ void message_rx(message_t *msg, distance_measurement_t *d) {
       // can be NONE, RESOURCE_A and RESOURCE_B
       sa_type = (msg->data[1]); // get arena position
 
-      if(sa_type == INSIDE_AREA_A) {
-        resource_a.pop = msg->data[5]; // update area pop
-      } else if (sa_type == INSIDE_AREA_B) {
-        resource_b.pop = msg->data[5]; // update area pop
-      }
+      // merge gathered informations
+      merge_scan(sa_type, msg->data[5]); // update area pop
 
       // get arena coordinates
       my_coordinates.x = ((msg->data[2]&0b11) << 8) | (msg->data[3]);
@@ -202,12 +232,12 @@ void message_rx(message_t *msg, distance_measurement_t *d) {
         current_state = OUTSIDE_AREA;
         // search for something
         set_motion(FORWARD);
-        last_motion_ticks=kilo_ticks;
+        last_decision_ticks=kilo_ticks;
       }
     }
   } else if(msg->type == 1) {
     /* ----------------------------------*/
-    // KB interactive message
+    /* KB interactive message            */
     /* ----------------------------------*/
 
     if(id != kilo_uid) {
@@ -220,12 +250,9 @@ void message_rx(message_t *msg, distance_measurement_t *d) {
         the_local_knowledge[id].coordinates.x = ((msg->data[2]&0b11) << 8) | (msg->data[3]);
         the_local_knowledge[id].coordinates.y = ((msg->data[4]&0b11) << 8) | (msg->data[5]);
         // get process (for interactive processes)
-        the_local_knowledge[id].process = msg->data[6];
+        the_local_knowledge[id].area_pop = msg->data[6];
         // update timestamp
         the_local_knowledge[id].timestamp = kilo_ticks;
-
-        set_color(RGB(3,3,3));
-
       }
     }
   }
@@ -253,38 +280,120 @@ void message_tx_success() {
 /* Sets ths current_decision var                                     */
 /*-------------------------------------------------------------------*/
 void take_decision() {
-  // no valid interactive process yet, set crc to 0
-  /* interactive_message.crc = 0; */
-  /* interactive_message.type = 1; */
+  /* no valid interactive process yet, set crc to 0 */
+  interactive_message.crc = 0;
+  interactive_message.type = 1;
 
   // get current area utility if any
+  u_int8_t area_pop = 0;
+  if(current_state == INSIDE_AREA_A) {
+    area_pop = resource_a.pop;
+  } else if(current_state == INSIDE_AREA_A) {
+    area_pop = resource_b.pop;
+  }
 
-  // TODO decide using whatever knowledge we have and update the target
-  // check status uncommitted or committed
+  /* Start decision process */
+  // these are not actually needed but are kept for debug purposes
+  u_int8_t commitment = 0;     // value for the commitment process
+  u_int8_t abandon = 0;        // value for the abandon process
+  u_int8_t recruitment = 0;    // value for the recruitment process
+  u_int8_t cross = 0;          // value for the corss-inhibition process
+
+
+  u_int8_t extraction = rand_soft(); // a random number to extract next decision
+  current_decision = NONE; // reset decision process
 
   // if uncommitted
-  // spontaneous commitment process through discovery
-  // rectruitmet
-  // una volta reclutato vai in cerca dell'area A e finche' non la trovi non fai altro
+  if(current_state != COMMITTED_AREA_A &&
+     current_state != COMMITTED_AREA_B) {
 
-  //if committed
-  // spontaneous abandon process
-  // cross-inhibition
+    /****************************************************/
+    /* spontaneous commitment process through discovery */
+    /****************************************************/
 
+    // if not none then it discovered at least an area (i.e. over an area)
+    // if area_pop == 0 then there will be no commitment anyway
+    // if area_pop < 0 then wait for it to recover
+    if(current_state != NONE &&
+       area_pop != 0 &&
+       area_pop > area_exploitation_threshold) {
+      commitment = area_pop*k;
+    }
 
-  /* Fill up the kb message */
-  /* interactive_message.data[0] = kilo_uid; */
-  /* interactive_message.data[1] = current_state; */
-  /* // fill up the message of uint8 by splitting the uin16 */
-  /* interactive_message.data[2] = (my_coordinates.x >> 8); // hi part of the uint16 */
-  /* interactive_message.data[3] = (my_coordinates.x & 0xff); // lo part of the uint16 */
-  /* interactive_message.data[4] = (my_coordinates.y >> 8); // hi part of the uint16 */
-  /* interactive_message.data[5] = (my_coordinates.y & 0xff); // lo part of the uint16 */
-  /* u_int8_t area_pop = 1; */
-  /* interactive_message.data[6] = area_pop; */
+    /* is the winning process? */
+    extraction -= commitment;
+    if(extraction <= 0) {
+      extraction = 255; // put it back to 255 to avoid extracion of a second winner
+      current_decision = COMMITTMENT; // save the winning process
+    }
 
-  /* // fill up the crc */
-  /* interactive_message.crc = message_crc(&interactive_message); */
+    /****************************************************/
+    /* recruitment over a random agent                  */
+    /****************************************************/
+
+    u_int8_t random = (rand_soft()*num_of_kbs)/255; // a random agent
+    local_knowledge rand_agent = the_local_knowledge[random];
+    // if the message is still valid
+    if(rand_agent.timestamp - kilo_ticks < knowledge_not_valid_after) {
+      recruitment = rand_agent.area_pop*h;
+    }
+
+    /* is the winning process? */
+    extraction -= recruitment;
+    if(extraction <= 0) {
+      extraction = 255; // put it back to 255 to avoid extracion of a second winner
+      if(rand_agent.state == COMMITTED_AREA_A) {
+        current_decision = RECRUITMENT_A; // save the winning process
+      } else {
+        current_decision = RECRUITMENT_B; // save the winning process
+      }
+    }
+  } else {
+
+    /****************************************************/
+    /* abandon                                          */
+    /****************************************************/
+
+    /* leave immediately if reached the threshold */
+    if(area_pop <= area_exploitation_threshold) {
+      abandon = 255;
+    }
+
+    /* is the winning process? */
+    extraction -= abandon;
+    if(extraction <= 0) {
+      extraction = 255; // put it back to 255 to avoid extracion of a second winner
+      current_decision = ABANDON; // save the winning process
+    }
+
+    /****************************************************/
+    /* cross inhibtion over a random agent              */
+    /****************************************************/
+
+    u_int8_t random = (rand_soft()*num_of_kbs)/255; // a random agent
+    local_knowledge rand_agent = the_local_knowledge[random];
+    // if the message is still valid
+    if(rand_agent.timestamp - kilo_ticks < knowledge_not_valid_after) {
+      cross = rand_agent.area_pop*k;
+    }
+
+    /* is the winning process? */
+    extraction -= cross;
+    if(extraction <= 0) {
+      extraction = 255; // put it back to 255 to avoid extracion of a second winner
+      if(rand_agent.state == COMMITTED_AREA_A) {
+        current_decision = INHIBITION_A; // save the winning process
+      } else {
+        current_decision = INHIBITION_B; // save the winning process
+      }
+    }
+  }
+
+  /* Partially fill up the kb message  */
+  /* the rest is filled up in the loop */
+  interactive_message.data[0] = kilo_uid;
+  /* send out area pop for interactive processes */
+  interactive_message.data[6] = area_pop;
 }
 
 
@@ -294,24 +403,24 @@ void take_decision() {
 void random_walk(){
   switch( current_motion_type ) {
   case TURN_LEFT:
-    if( kilo_ticks > last_motion_ticks + turning_ticks ) {
+    if( kilo_ticks > last_decision_ticks + turning_ticks ) {
       /* start moving forward */
-      last_motion_ticks = kilo_ticks;  // fixed time FORWARD
-      //	last_motion_ticks = rand() % max_straight_ticks + 1;  // random time FORWARD
+      last_decision_ticks = kilo_ticks;  // fixed time FORWARD
+      //	last_decision_ticks = rand() % max_straight_ticks + 1;  // random time FORWARD
       set_motion(FORWARD);
     }
   case TURN_RIGHT:
-    if( kilo_ticks > last_motion_ticks + turning_ticks ) {
+    if( kilo_ticks > last_decision_ticks + turning_ticks ) {
       /* start moving forward */
-      last_motion_ticks = kilo_ticks;  // fixed time FORWARD
-      //	last_motion_ticks = rand() % max_straight_ticks + 1;  // random time FORWARD
+      last_decision_ticks = kilo_ticks;  // fixed time FORWARD
+      //	last_decision_ticks = rand() % max_straight_ticks + 1;  // random time FORWARD
       set_motion(FORWARD);
     }
     break;
   case FORWARD:
-    if( kilo_ticks > last_motion_ticks + max_straight_ticks ) {
+    if( kilo_ticks > last_decision_ticks + max_straight_ticks ) {
       /* perform a radnom turn */
-      last_motion_ticks = kilo_ticks;
+      last_decision_ticks = kilo_ticks;
       if( rand()%2 ) {
         set_motion(TURN_LEFT);
       }
@@ -338,44 +447,72 @@ void setup() {
     set_motors(0,0);
 
     /* Initialise random seed */
-    uint8_t seed = rand_hard();
+    uint8_t seed = rand_soft(); // use rand_soft that is faster
     rand_seed(seed);
-    seed = rand_hard();
-    srand(seed);
 
     /* Initialise motion variables */
-    last_motion_ticks=rand()%max_straight_ticks;
-    set_motion( FORWARD );
+    last_decision_ticks=rand()%max_straight_ticks;
+    set_motion(FORWARD);
 }
+
 
 /*-------------------------------------------------------------------*/
 /* Main loop                                                         */
 /*-------------------------------------------------------------------*/
 void loop() {
-  /* set_color(RGB(0,0,0)); */
-  /* delay(250); */
+  // TODO non prendere decisioni ad ogni step, prima devi prendere
+  // informazioni sulle qualita'.
+  // TODO ARK deve mandare informazioni solo sul piccolo cerchietto in cui e' il kb
+  // e non su tutta la risorsa
+  // TODO ARK deve vedere lo stato dei kbs dai led!
 
-  interactive_message.data[0] = 0;
-  interactive_message.type = NORMAL;
-  interactive_message.crc = message_crc(&interactive_message);
+  // take decision only after exploration
+  if(exploration_ticks <= kilo_ticks-last_decision_ticks) {
+    take_decision();
+    // reset last decision ticks
+    last_decision_ticks = kilo_ticks;
 
-  if(sent_message) {
-    sent_message = 0;
-    set_color(RGB(0,0,1));
+    if(current_decision == COMMITTMENT) {
+      // go to selected area
+      if(current_state == INSIDE_AREA_A) {
+        current_state = COMMITTED_AREA_A;
+      } else if(current_state == INSIDE_AREA_B) {
+        current_state = COMMITTED_AREA_B;
+      }
+      set_motion(STOP);
+
+    } else if (current_decision == RECRUITMENT_A ||
+               current_decision == RECRUITMENT_B) {
+      // if recruited una volta reclutato vai in cerca dell'area A e finche' non la trovi non fai altro
+      random_walk();
+
+    } else if(current_decision == ABANDON){
+      // leave current area
+      current_state = NONE;
+      set_motion(FORWARD);
+
+    } else if(current_decision == INHIBITION_A ||
+              current_decision == INHIBITION_B) {
+      // leave the area
+      random_walk();
+    } else if(current_decision == NONE) {
+      random_walk();
+    }
+  } else {
+    random_walk();
   }
 
-  // take decision
-  /* take_decision(); */
+  /* fill up the rest of the message */
+  /* fill up the message of uint8 by splitting the uint16 */
+  interactive_message.data[2] = (my_coordinates.x >> 8); // hi part of the uint16
+  interactive_message.data[3] = (my_coordinates.x & 0xff); // lo part of the uint16
+  interactive_message.data[4] = (my_coordinates.y >> 8); // hi part of the uint16
+  interactive_message.data[5] = (my_coordinates.y & 0xff); // lo part of the uint16
 
-  /* if(current_decision == COMMITTMENT || current_decision == RECRUITMENT) { */
-  /*   // TODO go to selected area ASAP */
-  /*   random_walk(); */
-  /* } else if(current_decision == ABANDONDONMENT || current_decision == INHIBITION) { */
-  /*   // TODO leave the area ASAP */
-  /*   random_walk(); */
-  /* } else if(current_decision == NONE) { */
-  /*   random_walk(); */
-  /* } */
+  /* fill up the current state */
+  interactive_message.data[1] = current_state;
+  /* fill up the crc */
+  interactive_message.crc = message_crc(&interactive_message);
 }
 
 int main() {

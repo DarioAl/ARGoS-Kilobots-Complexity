@@ -38,8 +38,10 @@ void CComplexityALF::Reset() {
 /****************************************/
 
 void CComplexityALF::Destroy() {
-  delete resource_a;
-  delete resource_b;
+  for(int i=0; i<areas_per_type; i++) {
+    delete resource_a.at(i);
+    delete resource_b.at(i);
+  }
   /* Close data file */
   m_cOutput.close();
 }
@@ -70,9 +72,82 @@ void CComplexityALF::SetupInitialKilobotState(CKilobotEntity &c_kilobot_entity){
 /****************************************/
 /****************************************/
 
+//TODO still intersect .... not working
+int circle_intersection(CVector2 c1, CVector2 c2, Real rad) {
+  Real dist_squared = pow(c1.GetX()-c2.GetX(),2)+pow(c1.GetY()-c2.GetY(),2);
+  Real rad_sum_squared = pow(rad*2,2);
+
+  if (dist_squared == rad_sum_squared)
+    return 1;
+  else if (dist_squared > rad_sum_squared)
+    return -1;
+  else
+    return 0;
+}
+
 void CComplexityALF::SetupVirtualEnvironments(TConfigurationNode& t_tree){
-  resource_a = new AreaALF(0, t_tree);
-  resource_b = new AreaALF(1, t_tree);
+  // get arena size from cfg
+  CVector3 arena_size(2,2,4);
+  // TConfigurationNode& tArenaNode = GetNode(t_tree,"arena");
+  // GetNodeAttribute(tArenaNode, "size", arena_size);
+
+  // get area number and radius from cfg
+  Real area_radius;
+  TConfigurationNode& tEnvironmentsNode = GetNode(t_tree,"environments");
+  GetNodeAttribute(tEnvironmentsNode, "area_radius", area_radius);
+  GetNodeAttribute(tEnvironmentsNode, "areas_per_type", areas_per_type);
+  CVector2 positions[areas_per_type*2];
+
+  // initialize random seed
+  srand(time(NULL));
+
+  Real randm;
+  // randomize the first one
+  randm = ((Real) rand()/(RAND_MAX))-0.5;
+  positions[0].SetX(randm*arena_size.GetX());
+  randm = ((Real) rand()/(RAND_MAX))-0.5;
+  positions[0].SetY(randm*arena_size.GetY());
+
+  // generate positions first
+  for(uint8_t i=1; i<areas_per_type*2; i++) {
+    uint8_t tries = 0;
+
+    while(tries < 255) {
+      bool duplicate = false;
+      randm = ((Real) rand()/(RAND_MAX))-0.5;
+      positions[i].SetX(randm*arena_size.GetX());
+      randm = ((Real) rand()/(RAND_MAX))-0.5;
+      positions[i].SetY(randm*arena_size.GetY());
+
+      // check if overlapping
+      for(uint8_t j=0; j<i; j++) {
+        if(circle_intersection(positions[j], positions[i], area_radius) > 0)
+          duplicate = true; // extract again
+      }
+      if(!duplicate)
+        break;
+      tries++;
+    }
+
+    if (tries == 255) {
+      std::cout << "Failed to find a spot for the resource " << std::endl;
+      exit(-1);
+    }
+  }
+
+  // split each resource in 20 subareas
+  // multiple areas but associated to the same resource
+  resource_a.reserve(areas_per_type);
+  resource_b.reserve(areas_per_type);
+
+  for(uint8_t i=0; i<areas_per_type*2; i++) {
+    if(i%2==0)
+      // evens are of type a
+      resource_a.push_back(new AreaALF(0, i, positions[i], area_radius, t_tree));
+    else
+      // odds are of type b
+      resource_b.push_back(new AreaALF(1, i, positions[i], area_radius, t_tree));
+  }
 }
 
 /****************************************/
@@ -97,6 +172,7 @@ void CComplexityALF::GetExperimentVariables(TConfigurationNode& t_tree){
 
 void CComplexityALF::UpdateKilobotStates(){
   // resets kbs positions
+  this->kilobotsInNone = 0;
   this->kilobotsInA = 0;
   this->kilobotsInB = 0;
 
@@ -106,9 +182,10 @@ void CComplexityALF::UpdateKilobotStates(){
   }
 
   // update areas now
-  this->resource_a->doStep(this->kilobotsInA);
-  this->resource_b->doStep(this->kilobotsInB);
-
+  for(int i=0; i<areas_per_type; i++) {
+    this->resource_a.at(i)->doStep(this->kilobotsInA);
+    this->resource_b.at(i)->doStep(this->kilobotsInB);
+  }
   // std::cout << resource_a->population << std::endl;
   // std::cout << resource_b->population << std::endl;
  }
@@ -119,30 +196,36 @@ void CComplexityALF::UpdateKilobotStates(){
 /****************************************/
 
 void CComplexityALF::UpdateKilobotState(CKilobotEntity &c_kilobot_entity){
+  //TODO change enum to have the area ID in which the kb is
+  //TODO still need to send the right population to the kbs
+
   // update kilobots positions
   // Update the state of the kilobots (inside or outside the resources)
   UInt16 unKilobotID = GetKilobotId(c_kilobot_entity);
   CVector2 cKilobotPosition = GetKilobotPosition(c_kilobot_entity);
 
-  // distance from the center of resource a
-  if((pow(cKilobotPosition.GetX()-resource_a->position.GetX(),2) +
-      pow(cKilobotPosition.GetY()-resource_a->position.GetY(),2)) <
-     resource_a->radius){
-    m_vecKilobotStates[unKilobotID]=INSIDE_AREA_A;
-    ++this->kilobotsInA;
-    return;
-  }
+  for(UInt8 i=0; i<areas_per_type; i++) {
+    AreaALF* resource = resource_a.at(i);
+    // distance from the center of resource a
+    if((pow(cKilobotPosition.GetX()-resource->position.GetX(),2) +
+        pow(cKilobotPosition.GetY()-resource->position.GetY(),2)) <
+       resource->radius){
+      m_vecKilobotStates[unKilobotID]=INSIDE_AREA_A;
+      ++this->kilobotsInA;
+      return;
+    }
 
-  // distance from the center of resource b
-  // this is done fore every kb, avoid this computation unless needed
-  if((pow(cKilobotPosition.GetX()-resource_b->position.GetX(),2) +
-      pow(cKilobotPosition.GetY()-resource_b->position.GetY(),2)) <
-     resource_b->radius){
-    m_vecKilobotStates[unKilobotID]=INSIDE_AREA_B;
-    ++this->kilobotsInB;
-    return;
+    resource = resource_b.at(i);
+    // distance from the center of resource b
+    // this is done fore every kb, avoid this computation unless needed
+    if((pow(cKilobotPosition.GetX()-resource->position.GetX(),2) +
+        pow(cKilobotPosition.GetY()-resource->position.GetY(),2)) <
+       resource->radius){
+      m_vecKilobotStates[unKilobotID]=INSIDE_AREA_B;
+      ++this->kilobotsInB;
+      return;
+    }
   }
-
   // the kb is in none of the areas
   m_vecKilobotStates[unKilobotID]=OUTSIDE_AREA;
   ++this->kilobotsInNone;
@@ -153,9 +236,6 @@ void CComplexityALF::UpdateKilobotState(CKilobotEntity &c_kilobot_entity){
 /****************************************/
 
 void CComplexityALF::UpdateVirtualSensor(CKilobotEntity &c_kilobot_entity){
-  /* Flag for existance of message to send*/
-  bool bMessageToSend = false;
-
   // get kb id
   UInt8 unKilobotID = (UInt8) GetKilobotId(c_kilobot_entity); // get kb id
 
@@ -177,11 +257,11 @@ void CComplexityALF::UpdateVirtualSensor(CKilobotEntity &c_kilobot_entity){
     UInt16 y_coord = (UInt16) (kb_position.GetY()*1000);
 
     // 6th byte for area pop (normalazed between [0-255])
-    UInt8 area_pop = 255;
+    UInt8 area_pop = 255;//TODO send only percentage of local area area_pop;
     if(state == SRobotState::INSIDE_AREA_A) {
-      area_pop = (UInt8) resource_a->population*255; // pop is between [0,1]
+      area_pop = 255;//(UInt8) resource_a->population*255; // pop is between [0,1]
     } else if(state == SRobotState::INSIDE_AREA_B) {
-      area_pop = (UInt8) resource_b->population*255; // pop is between [0,1]
+      area_pop = 255;//(UInt8) resource_b->population*255; // pop is between [0,1]
     }
 
     /* Prepare the inividual kilobot's message */
@@ -198,6 +278,7 @@ void CComplexityALF::UpdateVirtualSensor(CKilobotEntity &c_kilobot_entity){
     m_tMessages[unKilobotID].data[4] = (y_coord >> 8); // hi part of the uint16
     m_tMessages[unKilobotID].data[5] = (y_coord & 0xff); // lo part of the uint16
     m_tMessages[unKilobotID].data[6] = area_pop;
+
     // to concatenate back use
     // UInt16 ycord = (((UInt16)data[4] << 8) | data[5]);
 
@@ -207,25 +288,31 @@ void CComplexityALF::UpdateVirtualSensor(CKilobotEntity &c_kilobot_entity){
     /* Sending the message using the overhead controller */
     GetSimulator().GetMedium<CKilobotCommunicationMedium>("kilocomm").SendOHCMessageTo(c_kilobot_entity,&m_tMessages[unKilobotID]);
   }
-
 }
 
 /****************************************/
 /****************************************/
 
 CColor CComplexityALF::GetFloorColor(const CVector2 &vec_position_on_plane) {
+  // base background color
   CColor cColor=CColor::WHITE;
-  if((pow(vec_position_on_plane.GetX()-resource_a->position.GetX(),2) +
-      pow(vec_position_on_plane.GetY()-resource_a->position.GetY(),2)) <
-     resource_a->radius){
-    cColor=resource_a->color;
-    return cColor;
-  }
-  if((pow(vec_position_on_plane.GetX()-resource_b->position.GetX(),2) +
-      pow(vec_position_on_plane.GetY()-resource_b->position.GetY(),2)) <
-     resource_b->radius){
-    cColor=resource_b->color;
-    return cColor;
+
+  for(UInt8 i=0; i<areas_per_type; i++) {
+    AreaALF* resource = resource_a.at(i);
+    if((pow(vec_position_on_plane.GetX()-resource->position.GetX(),2) +
+        pow(vec_position_on_plane.GetY()-resource->position.GetY(),2)) <
+       resource->radius){
+      cColor=resource->color;
+      return cColor;
+    }
+
+    resource = resource_b.at(i);
+    if((pow(vec_position_on_plane.GetX()-resource->position.GetX(),2) +
+        pow(vec_position_on_plane.GetY()-resource->position.GetY(),2)) <
+       resource->radius){
+      cColor=resource->color;
+      return cColor;
+    }
   }
   return cColor;
 }

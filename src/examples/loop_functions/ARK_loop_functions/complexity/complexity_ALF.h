@@ -100,19 +100,16 @@ private:
   /*  virtual Environment variables   */
   /************************************/
 
-  /************************************/
-  /* virtual environment struct*/
-  /************************************/
-
-  /*
-   * the doStep of the resources is called every iteration and updates
-   * the population according to the number of kbs in the resource
-   */
-  AreaALF* resource_a;   // resource a
-  AreaALF* resource_b;   // resource b
+  UInt8 areas_per_type; // number of subareas per resource type
+  std::vector<AreaALF*> resource_a;   // resource a
+  std::vector<AreaALF*>resource_b;   // resource b
   UInt16 kilobotsInA;    // number of kbs in resource a
   UInt16 kilobotsInB;    // number of kbs in resource b
   UInt16 kilobotsInNone; // number of kbs in no area
+
+  /************************************/
+  /* virtual environment struct*/
+  /************************************/
 
   typedef enum {
                 OUTSIDE_AREA=0,
