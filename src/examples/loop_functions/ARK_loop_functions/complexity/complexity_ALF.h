@@ -17,7 +17,6 @@ class CSimulator;
 }
 
 #include <math.h>
-
 #include <argos3/core/simulator/loop_functions.h>
 #include <argos3/plugins/robots/kilobot/simulator/ALF.h>
 #include <argos3/core/simulator/simulator.h>
@@ -46,7 +45,7 @@ class CSimulator;
 #include <argos3/plugins/robots/kilobot/control_interface/message.h>
 
 //resources area
-#include "area.h"
+#include "resource.h"
 
 #include <array>
 
@@ -100,25 +99,20 @@ private:
   /*  virtual Environment variables   */
   /************************************/
 
-  UInt8 areas_per_type; // number of subareas per resource type
-  std::vector<AreaALF*> resource_a;   // resource a
-  std::vector<AreaALF*>resource_b;   // resource b
-  UInt16 kilobotsInA;    // number of kbs in resource a
-  UInt16 kilobotsInB;    // number of kbs in resource b
-  UInt16 kilobotsInNone; // number of kbs in no area
+  CVector3 arena_size; // size of the arena
+  std::vector<ResourceALF> resources;    // all resources
 
   /************************************/
   /* virtual environment struct*/
   /************************************/
 
-  typedef enum {
-                OUTSIDE_AREA=0,
-                INSIDE_AREA_A=1,
-                INSIDE_AREA_B=2,
-  } SRobotState;
+  /* used to store the state of each kilobot
+   * 255 is used for no resource
+   */
+  std::vector<UInt8> m_vecKilobotStates;
 
-  /* used to store the SRobotState of each kilobot */
-  std::vector<SRobotState> m_vecKilobotStates;
+  /* used to store the position of each kilobot */
+  std::vector<CVector2> m_vecKilobotsPositions;
 
   /* used to store the last message sent to each kilobot */
   std::vector<Real> m_vecLastTimeMessaged;

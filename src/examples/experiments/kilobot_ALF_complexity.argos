@@ -46,7 +46,6 @@
             color="false">
         </tracking>
 
-
         <variables
             datafilename="data_file.txt"
             dataacquisitionfrequency="100"
@@ -54,28 +53,15 @@
             timeforonemessage="0.05">
         </variables>
 
-        <environments area_radius="0.005" areas_per_type="10">
-          <Area
-              id="0"
-              population="1"
-              color="255,0,0,255"
-              eta="1"
-              k="1"
-              umin="0.5"
-              delta="0.05"
-              xi="0.005">
-          </Area>
-          <Area
-              id="1"
-              population="1"
-              color="0,255,0,255"
-              eta="1"
-              k="1"
-              umin="0.5"
-              delta="0.05"
-              xi="0.005">
-          </Area>
-        </environments>
+        <environments>
+          <resource
+            type="0"
+            initial_population = "5"
+            eta="0.1"
+            k="100"
+            umin="20">
+          </resource>
+       </environments>
 
     </loop_functions>
 

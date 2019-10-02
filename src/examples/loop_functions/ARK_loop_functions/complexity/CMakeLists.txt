@@ -4,6 +4,8 @@ add_library(ALF_complexity_loop_function
   MODULE
   complexity_ALF.h
   complexity_ALF.cpp
+  resource.h
+  resource.cpp
   area.h
   area.cpp
 )

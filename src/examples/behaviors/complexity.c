@@ -173,14 +173,9 @@ void set_motion( motion_t new_motion_type ) {
 /* which the kb is on. Kilobots can only perceive locally and try to */
 /* estimate the population of a resource                             */
 /*-------------------------------------------------------------------*/
-void merge_scan(u_int8_t sa_type, u_int8_t area_pop) {
-  // TODO sta roba fa schifo. C'e' un problema concettuale rispetto all'intero framework
-  // studiato fino ad ora
-  if(sa_type == INSIDE_AREA_A) {
-  resource_a.pop += area_pop; // update area pop
- } else if (sa_type == INSIDE_AREA_B) {
-  resource_b.pop += area_pop; // update area pop
- }
+void merge_scan() {
+  // TODO implementa scansione e stime risorse
+  // usa current_state
 }
 
 /*-------------------------------------------------------------------*/
@@ -205,35 +200,16 @@ void message_rx(message_t *msg, distance_measurement_t *d) {
     /* ----------------------------------*/
 
     if(id == kilo_uid) {
-      // the smart arena type is where the kb is
-      // can be NONE, RESOURCE_A and RESOURCE_B
-      sa_type = (msg->data[1]); // get arena position
+      // the smart arena type is where the kb is first byte of the payload
+      // can be NONE (255) or resource id 0<id<254
+      // TODO change the concept of committed (use a flag if commited) use type to know where on the area we area. If flag committed is on the turno on the led for argos that needs to know where the kb is
+      current_state = (msg->data[1]); // get resource position
+      merge_scan();
 
-      // merge gathered informations
-      merge_scan(sa_type, msg->data[5]); // update area pop
-
+      // UNCOMMENT IF NEEDED
       // get arena coordinates
-      my_coordinates.x = ((msg->data[2]&0b11) << 8) | (msg->data[3]);
-      my_coordinates.y = ((msg->data[4]&0b11) << 8) | (msg->data[5]);
-
-      if(sa_type == INSIDE_AREA_A) {
-        // set color for area A red
-        set_color(RGB(3,0,0));
-        // stop and exploit
-        set_motors(0,0);
-        set_motion(STOP);
-      } else if(sa_type == INSIDE_AREA_B) {
-        // set color for area B green
-        set_color(RGB(0,3,0));
-        // stop and exploit
-        set_motors(0,0);
-        set_motion(STOP);
-      } else if(sa_type == OUTSIDE_AREA) {
-        current_state = OUTSIDE_AREA;
-        // search for something
-        set_motion(FORWARD);
-        last_decision_ticks=kilo_ticks;
-      }
+      /* my_coordinates.x = ((msg->data[2]&0b11) << 8) | (msg->data[3]); */
+      /* my_coordinates.y = ((msg->data[4]&0b11) << 8) | (msg->data[5]); */
     }
   } else if(msg->type == 1) {
     /* ----------------------------------*/
@@ -245,6 +221,7 @@ void message_rx(message_t *msg, distance_measurement_t *d) {
       if(msg->crc == message_crc(msg)) {
         // gather information about other kbs
         // where it is?
+        // TODO local knowledge is now a buffer! change that
         the_local_knowledge[id].state = msg->data[1];
         // get arena coordinates
         the_local_knowledge[id].coordinates.x = ((msg->data[2]&0b11) << 8) | (msg->data[3]);
@@ -311,11 +288,15 @@ void take_decision() {
     /* spontaneous commitment process through discovery */
     /****************************************************/
 
+    // TODO conta numero di timestep passati su un area/risorsa e stima in qualche modo l'utilita' da quelli
+    // questo viene fatto nell'intervallo tra una decisione e l'altra
+
+    // fai tutti e due i processi insieme per non prioritizzare il discovery
+    // disc disc disc recr
+
     // if not none then it discovered at least an area (i.e. over an area)
-    // if area_pop == 0 then there will be no commitment anyway
     // if area_pop < 0 then wait for it to recover
     if(current_state != NONE &&
-       area_pop != 0 &&
        area_pop > area_exploitation_threshold) {
       commitment = area_pop*k;
     }
@@ -330,6 +311,15 @@ void take_decision() {
     /****************************************************/
     /* recruitment over a random agent                  */
     /****************************************************/
+
+    // TODO doppia implementazione:
+    // 1) tieni in memoria solo l'ultimo messaggio e usa quello se ancora valido
+    // 2) tieni in memoria un buffer di messaggi e randomizza su quelli se ancora validi. uno per robot.
+    // questo per vedere come si comporta il sistema se well mixed
+
+    // Continua ad usare l'utilita' stimata dal kb che manda il messaggio
+
+    // da studiare anche come varia questa soluzione in base alla frequenza del take_decision()
 
     u_int8_t random = (rand_soft()*num_of_kbs)/255; // a random agent
     local_knowledge rand_agent = the_local_knowledge[random];
@@ -353,6 +343,8 @@ void take_decision() {
     /****************************************************/
     /* abandon                                          */
     /****************************************************/
+
+    // TODO come sopra, due cose in parallelo e la somma delle prob non deve superare 1 altrimenti scoppia il macro
 
     /* leave immediately if reached the threshold */
     if(area_pop <= area_exploitation_threshold) {
@@ -401,6 +393,7 @@ void take_decision() {
 /* Function implementing the uncorrelated random walk                */
 /*-------------------------------------------------------------------*/
 void random_walk(){
+  // TODO use amaury random walk (better a levy than a brownian)
   switch( current_motion_type ) {
   case TURN_LEFT:
     if( kilo_ticks > last_decision_ticks + turning_ticks ) {
@@ -432,7 +425,6 @@ void random_walk(){
     break;
   case STOP:
   default:
-    /* stop when reached the area */
     set_motion(STOP);
   }
 }
@@ -466,6 +458,26 @@ void loop() {
   // e non su tutta la risorsa
   // TODO ARK deve vedere lo stato dei kbs dai led!
 
+/*   // set color for area A red */
+/*   set_color(RGB(3,0,0)); */
+/*   // stop and exploit */
+/*   set_motors(0,0); */
+/*   set_motion(STOP); */
+/* } else if(sa_type == INSIDE_AREA_B) { */
+/*   // set color for area B green */
+/*   set_color(RGB(0,3,0)); */
+/*   // stop and exploit */
+/*   set_motors(0,0); */
+/*   set_motion(STOP); */
+/*  } else if(sa_type == OUTSIDE_AREA) { */
+/*   current_state = OUTSIDE_AREA; */
+/*   // search for something */
+/*   set_motion(FORWARD); */
+/*   last_decision_ticks=kilo_ticks; */
+/*  } */
+/* } */
+
+
   // take decision only after exploration
   if(exploration_ticks <= kilo_ticks-last_decision_ticks) {
     take_decision();
@@ -474,6 +486,7 @@ void loop() {
 
     if(current_decision == COMMITTMENT) {
       // go to selected area
+      // con piu' risorse metti un for
       if(current_state == INSIDE_AREA_A) {
         current_state = COMMITTED_AREA_A;
       } else if(current_state == INSIDE_AREA_B) {
@@ -489,7 +502,7 @@ void loop() {
     } else if(current_decision == ABANDON){
       // leave current area
       current_state = NONE;
-      set_motion(FORWARD);
+      random_walk();
 
     } else if(current_decision == INHIBITION_A ||
               current_decision == INHIBITION_B) {

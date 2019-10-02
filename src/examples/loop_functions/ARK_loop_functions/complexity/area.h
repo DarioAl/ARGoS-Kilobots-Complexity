@@ -1,5 +1,7 @@
 /**
- * Custom definition of an area and relative resources contained in it
+ * Custom definition of an area
+ * With the term area we refer to the single area (e.g. the single red circle)
+ * Areas disasppears when the population reaches 0
  *
  * @author Dario Albani
  * @email dario.albani@istc.cnr.it
@@ -11,65 +13,63 @@
 #include <math.h>
 #include <stdlib.h>
 
-#include <argos3/core/simulator/loop_functions.h>
-#include <argos3/plugins/robots/kilobot/simulator/ALF.h>
 #include <argos3/core/simulator/simulator.h>
-#include <argos3/core/simulator/physics_engine/physics_engine.h>
 
 #include <argos3/core/utility/math/vector2.h>
-#include <argos3/core/utility/math/rng.h>
 #include <argos3/core/utility/logging/argos_log.h>
 
+#include <argos3/core/simulator/entity/embodied_entity.h>
+#include <argos3/core/simulator/entity/composable_entity.h>
+#include <argos3/plugins/simulator/entities/led_equipped_entity.h>
 #include <argos3/core/simulator/entity/floor_entity.h>
 
 using namespace argos;
 
-#define SCALE_FACTOR 100 // to slow down utility update
-#define REDAREA 0
-#define GREENAREA 1
+// base population for every area
+#define BASE_POP 10
 
 class AreaALF {
  private:
-  UInt8 type; // resource type
-  UInt8 id; // area id
+  // enum for resource color
+  std::string enumColor[10] = {
+                               "green",
+                               "red",
+                               "orange",
+                               "yellow",
+                               "black",
+                               "magenta",
+                               "cyan",
+                               "brown",
+                               "purple",
+                               "blue",
+  };
 
-  /************************************/
-  /* Area specific variables          */
-  /************************************/
-  Real eta; /* growht factor */
-  Real k; /* maximum population */
-  Real umin; /* population threshold @see doStep */
-
-  /************************************/
-  /* Kilobots specific variables for  */
-  /* area exploitation. Stored here   */
-  /* for ease of access               */
-  /************************************/
-  Real delta; /* collaboration value for the kilobots */
-  Real xi; /* interference value for the kilobots */
 
  public:
   /************************************/
   /* virtual environment visualization*/
   /************************************/
+  UInt8 type; // resource type REDAREA or GREENAREA
+  UInt8 id; // area id
+
   CVector2 position; /* Center of the resource */
   Real radius; /* Radius of the circle to plot */
   Real population; /* Population in the current area */
   CColor color; /* Color used to represent the area */
+  UInt8 kilobots_in_area; /* keep counts of how many kbs are in the area*/
 
   /* constructor */
-  AreaALF(UInt8 type, UInt8 id, const CVector2& position, Real radius, TConfigurationNode& t_tree);
+  AreaALF(UInt8 type, UInt8 id, const CVector2& position, Real radius);
   /* destructor */
   ~AreaALF(){}
 
   /*
    * do one simulation step during which:
-   * - the population is increased according to a logistic function
-   * - the population is exploited according to the kilobots over it
+   * - the population is decreased according to the number of agents
    *
-   * @return true if a specific min value is reached
+   * @return true if a specific the population value reaches 0
    */
-  bool doStep(UInt8 kilobotsInArea);
+  bool doStep();
 
 };
 
