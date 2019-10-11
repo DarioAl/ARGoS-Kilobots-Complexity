@@ -112,7 +112,7 @@ private:
   std::vector<UInt8> m_vecKilobotStates;
 
   /* used to store the position of each kilobot */
-  std::vector<CVector2> m_vecKilobotsPositions;
+  std::vector<CVector2> m_vecCommittedKilobotsPositions;
 
   /* used to store the last message sent to each kilobot */
   std::vector<Real> m_vecLastTimeMessaged;

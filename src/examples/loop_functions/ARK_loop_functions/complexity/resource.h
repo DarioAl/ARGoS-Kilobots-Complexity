@@ -24,9 +24,6 @@
 
 using namespace argos;
 
-#define REDAREA 0 // custom definition for the areas
-#define GREENAREA 1 // custom definition for the areas
-
 class ResourceALF {
  public:
   /************************************/
@@ -36,6 +33,7 @@ class ResourceALF {
   Real area_radius;   // the radius of the circle
   std::vector<AreaALF> areas; /* areas of the resource */
   Real population; /* Total resource population */
+  UInt8 discretized_population; /* Total number of areas from population */
 
   /************************************/
   /* logistic growth                  */
@@ -48,7 +46,6 @@ class ResourceALF {
   inline ResourceALF() {
     type = 0;
     population = 0;
-    // TODO remove scale factor and set eta
     eta = 0;
     k = 0;
     umin = 0;

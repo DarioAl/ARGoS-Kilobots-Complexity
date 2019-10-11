@@ -1,8 +1,3 @@
-/**
- *  TODO
- * normalize sub areas. total utility of a resource is the sum of sub areas. e.g. if k = 10 then 10 subareas
- */
-
 #include "complexity_ALF.h"
 
 /****************************************/
@@ -47,7 +42,9 @@ void CComplexityALF::Destroy() {
 /****************************************/
 
 void CComplexityALF::SetupInitialKilobotStates() {
+  /* allocate space for the vectores */
   m_vecKilobotStates.resize(m_tKilobotEntities.size());
+  m_vecCommittedKilobotsPositions.resize(m_tKilobotEntities.size());
   m_vecLastTimeMessaged.resize(m_tKilobotEntities.size());
   m_fMinTimeBetweenTwoMsg = Max<Real>(1.0, m_tKilobotEntities.size() * m_fTimeForAMessage / 3.0);
   for(UInt16 it=0;it< m_tKilobotEntities.size();it++){
@@ -90,7 +87,7 @@ void CComplexityALF::SetupVirtualEnvironments(TConfigurationNode& t_tree){
 
   std::vector<CVector2> area_positions;
   for(ResourceALF& resource : resources) {
-    resource.generate(allAreas, arena_size, resource.population);
+    resource.generate(allAreas, arena_size, resource.discretized_population);
   }
 }
 
@@ -115,13 +112,9 @@ void CComplexityALF::GetExperimentVariables(TConfigurationNode& t_tree){
 /***********************************************/
 
 void CComplexityALF::UpdateKilobotStates(){
-  // resets kbs states
+  // resets kbs states and positions
   this->m_vecKilobotStates.clear();
-
-  // TODO
-  // da aggiornare la comunicazione dell'utilita'
-  // finisci di sistemare i vari update qui usando le risorse anziche' le aree
-  // sistema un po' in giro la merda lasciata e ricontrolla tutto
+  this->m_vecCommittedKilobotsPositions.clear();
 
   for(UInt16 it=0;it< m_tKilobotEntities.size();it++){
     /* Update the virtual states and actuators of the kilobot*/
@@ -136,9 +129,7 @@ void CComplexityALF::UpdateKilobotStates(){
 
   // now do step and eventually generate new areas
   for(ResourceALF& resource : resources) {
-    if(resource.doStep(m_vecKilobotsPositions, allAreas, arena_size)) {
-      std::cout << "Reached umin for resource_a" << std::endl;
-    }
+    resource.doStep(m_vecCommittedKilobotsPositions, allAreas, arena_size);
   }
 }
 
@@ -148,32 +139,38 @@ void CComplexityALF::UpdateKilobotStates(){
 /****************************************/
 
 void CComplexityALF::UpdateKilobotState(CKilobotEntity &c_kilobot_entity){
-  // update kilobots positions
-  // Update the state of the kilobots (inside or outside the resources)
+  // current kb id
   UInt16 unKilobotID = GetKilobotId(c_kilobot_entity);
-  CVector2 cKilobotPosition = GetKilobotPosition(c_kilobot_entity);
-  this->m_vecKilobotsPositions.push_back(cKilobotPosition);
+  // pre-check to avoid the two nested loops (those really slow down the simulation)
+  // since we only need the kbs position of those committed (showing a RED led)
+  if(GetKilobotLedColor(c_kilobot_entity) != CColor::RED) {
+    // the kb is not committed to any area
+    // 255 is the state value reserved for none
+    m_vecKilobotStates[unKilobotID] = 255;
+    return;
+  }
+
+  // update the position of the kilobots and store it for later use
+  this->m_vecCommittedKilobotsPositions.push_back(GetKilobotPosition(c_kilobot_entity));
 
   // check against resources
   for(const ResourceALF& resource : resources) {
     for(const AreaALF& area : resource.areas) {
       // distance from the center of area
-      if(SquareDistance(cKilobotPosition, area.position) < pow(area.radius,2)) {
-        /* remember that odd numbers are resource a */
+      if(SquareDistance(m_vecCommittedKilobotsPositions.back(), area.position) < pow(area.radius,2)) {
+        // update the state of the kilobot and store it for later use
         m_vecKilobotStates[unKilobotID] = resource.type;
+        // got it, no need to search anymore
         return;
       }
     }
   }
-
-  // the kb is in none of the areas
-  // 255 is reserved for none
-  m_vecKilobotStates[unKilobotID] = 255;
 }
 
-/****************************************/
-/* Actual update of the kbs sensors     */
-/****************************************/
+/*******************************************/
+/* Actual update of the kbs sensors        */
+/* Here we fill the message sent to the kb */
+/*******************************************/
 
 void CComplexityALF::UpdateVirtualSensor(CKilobotEntity &c_kilobot_entity){
   // get kb id
@@ -201,7 +198,11 @@ void CComplexityALF::UpdateVirtualSensor(CKilobotEntity &c_kilobot_entity){
 
     /* Fill up the kb message */
     m_tMessages[unKilobotID].data[0] = unKilobotID;
-    m_tMessages[unKilobotID].data[1] = state;
+    m_tMessages[unKilobotID].data[1] = state; // the resource id
+    if(state != 255) {
+      m_tMessages[unKilobotID].data[2] = resources.at(state).umin;
+      m_tMessages[unKilobotID].data[3] = resources.at(state).k;
+    }
 
     // UNCOMMENT IF NEEDED
     // fill up the message of uint8 by splitting the uin16

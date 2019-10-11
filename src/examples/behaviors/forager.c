@@ -106,6 +106,8 @@ void rx_message(message_t *msg, distance_measurement_t *d) {
 /* Function for setting the motor speed                              */
 /*-------------------------------------------------------------------*/
 void set_motion( motion_t new_motion_type ) {
+  set_motors(kilo_straight_left,kilo_straight_right);
+  return;
     bool calibrated = true;
     if ( current_motion_type != new_motion_type ){
         switch( new_motion_type ) {
@@ -220,7 +222,7 @@ void update_direction() {
 }
 
 /*---------------------------------------------------------------------------*/
-/* Function to change current action  							             */
+/* Function to change current action                             */
 /*---------------------------------------------------------------------------*/
 void change_action() {
     if (sa_type == 15){

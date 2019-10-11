@@ -12,6 +12,18 @@
 #include <stdio.h>
 #include <limits.h>
 
+#include "distribution_functions.c"
+
+#define RESOURCES_SIZE 3
+#define USE_BUFFER
+
+#ifdef USE_BUFFER
+#define BUFFER_SIZE 10
+#else
+#define BUFFER_SIZE 1
+#endif
+
+
 /*-------------------------------------------------------------------*/
 /* General Variables                                                 */
 /*-------------------------------------------------------------------*/
@@ -36,136 +48,119 @@ typedef enum {
 } motion_t;
 
 /* current motion type */
-motion_t current_motion_type = STOP;
+motion_t current_motion_type = FORWARD;
 
 /* counters for motion, turning and random_walk */
-uint32_t turn_ticks = 60;
-unsigned int turning_ticks = 0;
-const uint8_t max_turning_ticks = 160; /* constant to allow a maximum rotation of 180 degrees with \omega=\pi/5 */
-const uint16_t max_straight_ticks = 320; /* set the \tau_m period to 2.5 s: n_m = \tau_m/\delta_t = 2.5/(1/32) */
-uint32_t last_decision_ticks = 0;
+const double std_motion_steps = 5*16; // TODO ask Vito what is this
+u_int32_t levy_exponent = 1; // 2 is brownian like motion
+u_int32_t crw_exponent = 0.7; // go straight
+u_int32_t turning_ticks = 0; // keep count of ticks of turning
+const u_int8_t max_turning_ticks = 80; /* constant to allow a maximum rotation of 180 degrees with \omega=\pi/5 */
+unsigned int straight_ticks = 0; // keep count of ticks of going straight
+const u_int16_t max_straight_ticks = 320;
+uint32_t last_motion_ticks = 0;
 
 /*-------------------------------------------------------------------*/
 /* Smart Arena Variables                                             */
 /*-------------------------------------------------------------------*/
 
-/* enum for the robot states */
+/* enum for the robot states/position w.r.t. the smart arena */
 typedef enum {
-              OUTSIDE_AREA=0, // over no area
-              INSIDE_AREA_A=1, // over (not working on) area a
-              INSIDE_AREA_B=2, // over (not working on) area b
-              COMMITTED_AREA_A=3, // working on area a
-              COMMITTED_AREA_B=4, // working on area b
+              OUTSIDE_AREA=255,
+              INSIDE_AREA_0=0,
+              INSIDE_AREA_1=1,
+              INSIDE_AREA_2=2,
+              INSIDE_AREA_3=3,
+              INSIDE_AREA_4=4,
+              INSIDE_AREA_5=5,
+              INSIDE_AREA_6=6,
+              INSIDE_AREA_7=7,
+              INSIDE_AREA_8=8,
+              INSIDE_AREA_9=9,
 } arena_t;
 
+/* enum for keeping trace of internal kilobots decision related states */
+typedef enum {
+              NOT_COMMITTED=0,
+              COMMITTED_AREA_0=1,
+              COMMITTED_AREA_2=2,
+              COMMITTED_AREA_3=3,
+              COMMITTED_AREA_4=4,
+              COMMITTED_AREA_5=5,
+              COMMITTED_AREA_6=6,
+              COMMITTED_AREA_7=7,
+              COMMITTED_AREA_8=8,
+              COMMITTED_AREA_9=9,
+} decision_t;
+
 /* current state */
-arena_t current_state = OUTSIDE_AREA;
-
-/* pair of coordinates */
-typedef struct arena_coordinates arena_coordinates;
-struct arena_coordinates {
-  // not expressed as in the argos arena
-  // x and y are multiplied by 1k
-  u_int16_t x; // approximated position
-  u_int16_t y; // approximated position
-};
-
-/* area information */
-typedef  struct arena_area arena_area;
-struct arena_area {
-  u_int8_t id;
-  u_int8_t pop; // normalized between 0-255
-};
+arena_t current_arena_state = OUTSIDE_AREA;
+decision_t current_decision_state = NOT_COMMITTED;
+bool internal_error = false;
 
 /* Variables for Smart Arena messages */
-u_int8_t sent_message = 0;
-u_int8_t sa_type = 0; // 0,1,2 -> outside,in A, in B
-arena_area resource_a; // keep local knowledge about resources
-arena_area resource_b; // keep local knowledge about resources
-arena_coordinates my_coordinates; // current kb coordinates in the arena
+u_int8_t sa_type = 0; // smart arena type (i.e. resource id)
+u_int8_t resources_populations[RESOURCES_SIZE] = {0}; // keep local knowledge about resources
+u_int8_t resources_umin[RESOURCES_SIZE] = {0}; // keep local knowledge about resources umin
+u_int8_t resources_k[RESOURCES_SIZE] = {0}; // keep local knowledge about resources umin
 
 /*-------------------------------------------------------------------*/
 /* Decision Making                                                   */
 /*-------------------------------------------------------------------*/
-
-/* enum for the robot decisions */
-typedef enum {
-              NONE = 0,
-              COMMITTMENT = 1,
-              ABANDON = 2,
-              RECRUITMENT_A = 3, // recruitment over resource a
-              RECRUITMENT_B = 4, // recruitment over resource b
-              INHIBITION_A = 5, // inhibition over resource a
-              INHIBITION_B = 6, // inhibition over resource b
-} decision_t;
-
-/* area exploitation threshold, when to stop exploitation */
-u_int8_t area_exploitation_threshold = 0.5*255;
-
+u_int32_t last_decision_ticks = 0;
 /* processes variables */
 float k = 0.4;
 float h = 0.4;
-
-/* local knowledge about a kilobot */
-typedef struct local_knowledge local_knowledge;
-struct local_knowledge {
-  arena_t state; // kilbots state (in whiche area?)
-  u_int8_t area_pop; // perceived utility of the area
-  arena_coordinates coordinates; // its location
-  u_int32_t timestamp; // used for time validation (discard old information)
-};
-/* the whole local knowledge about other kbs */
-/* the index is the id */
-u_int8_t num_of_kbs = 25;
-local_knowledge the_local_knowledge[25];
-
-/* current decions */
-decision_t current_decision = NONE;
-/* to share kilobots local knowledge */
-message_t interactive_message;
-
 /* explore for a bit, estimate the pop and then take a decision */
 u_int32_t last_decision_tick = 0; /* when last decision was taken */
-uint32_t exploration_ticks = 250; /* take a decision only after exploring the environment */
+u_int32_t exploration_ticks = 50; /* take a decision only after exploring the environment */
 
-/* local knowledge validation period, exploration ticks doubled*/
-u_int32_t knowledge_not_valid_after = 250*2; // in ticks
+/*-------------------------------------------------------------------*/
+/* Communication                                                     */
+/*-------------------------------------------------------------------*/
+/* flag for message sent */
+u_int8_t sent_message = 0;
+
+/* current kb message out */
+message_t interactive_message;
+
+/* messages are valid for valid_util ticks */
+u_int8_t valid_until = 100;
+
+/* buffer definitions storing information from other kbs */
+u_int8_t buffer_iterator = 255;
+typedef struct compressed_messsage {
+  u_int32_t time_received; // time stamp
+  u_int8_t resource_id;    // id of the current resource
+  u_int8_t resource_pop;   // estimated population of the current resource
+} compressed_messsage;
+compressed_messsage last_received_messages[BUFFER_SIZE];
 
 
 /*-------------------------------------------------------------------*/
 /* Function for setting the motor speed                              */
 /*-------------------------------------------------------------------*/
-void set_motion( motion_t new_motion_type ) {
-    bool calibrated = true;
-    if ( current_motion_type != new_motion_type ){
-        switch( new_motion_type ) {
-        case FORWARD:
-            spinup_motors();
-            if (calibrated)
-                set_motors(kilo_straight_left,kilo_straight_right);
-            else
-                set_motors(70,70);
-            break;
-        case TURN_LEFT:
-            spinup_motors();
-            if (calibrated)
-                set_motors(kilo_turn_left,0);
-            else
-                set_motors(70,0);
-            break;
-        case TURN_RIGHT:
-            spinup_motors();
-            if (calibrated)
-                set_motors(0,kilo_turn_right);
-            else
-                set_motors(0,70);
-            break;
-        case STOP:
-        default:
-            set_motors(0,0);
-        }
-        current_motion_type = new_motion_type;
+void set_motion(motion_t new_motion_type) {
+  if(current_motion_type != new_motion_type ) {
+    switch( new_motion_type ) {
+    case FORWARD:
+      spinup_motors();
+      set_motors(kilo_straight_left,kilo_straight_right);
+      break;
+    case TURN_LEFT:
+      spinup_motors();
+      set_motors(kilo_turn_left,0);
+      break;
+    case TURN_RIGHT:
+      spinup_motors();
+      set_motors(0,kilo_turn_right);
+      break;
+    case STOP:
+    default:
+      set_motors(0,0);
     }
+    current_motion_type = new_motion_type;
+  }
 }
 
 /*-------------------------------------------------------------------*/
@@ -174,8 +169,13 @@ void set_motion( motion_t new_motion_type ) {
 /* estimate the population of a resource                             */
 /*-------------------------------------------------------------------*/
 void merge_scan() {
-  // TODO implementa scansione e stime risorse
-  // usa current_state
+  if(current_arena_state != 255)
+    // TODO discuss with Vito about this!
+    // check for the other TODO around to fix this
+
+    // this keep the number of areas seen around
+    // to be normalized over k
+    resources_populations[current_arena_state]++;
 }
 
 /*-------------------------------------------------------------------*/
@@ -191,56 +191,63 @@ void merge_scan() {
 /*-------------------------------------------------------------------*/
 
 void message_rx(message_t *msg, distance_measurement_t *d) {
-  // get id (always firt byte)
+  /* get id (always firt byte) */
   u_int8_t id = msg->data[0];
 
-  if(msg->type == 0) {
+  if(msg->type==0 && id==kilo_uid) {
     /* ----------------------------------*/
     /* smart arena message               */
     /* ----------------------------------*/
 
-    if(id == kilo_uid) {
-      // the smart arena type is where the kb is first byte of the payload
-      // can be NONE (255) or resource id 0<id<254
-      // TODO change the concept of committed (use a flag if commited) use type to know where on the area we area. If flag committed is on the turno on the led for argos that needs to know where the kb is
-      current_state = (msg->data[1]); // get resource position
-      merge_scan();
-
-      // UNCOMMENT IF NEEDED
-      // get arena coordinates
-      /* my_coordinates.x = ((msg->data[2]&0b11) << 8) | (msg->data[3]); */
-      /* my_coordinates.y = ((msg->data[4]&0b11) << 8) | (msg->data[5]); */
+    // the smart arena type is where the kb is first byte of the payload
+    // can be NONE (255) or resource id 0<id<254
+    current_arena_state = (msg->data[1]); // get resource position
+    if(current_arena_state != 255) {
+      resources_umin[current_arena_state] = (msg->data[2]); // get umin for the resource
+      resources_k[current_arena_state] = (msg->data[3]); // get k for the resource
     }
-  } else if(msg->type == 1) {
+    merge_scan();
+
+    // UNCOMMENT IF NEEDED
+    // get arena coordinates
+    /* my_coordinates.x = ((msg->data[2]&0b11) << 8) | (msg->data[3]); */
+    /* my_coordinates.y = ((msg->data[4]&0b11) << 8) | (msg->data[5]); */
+  } else if(msg->type==1 && id!=kilo_uid && msg->crc==message_crc(msg)) {
     /* ----------------------------------*/
     /* KB interactive message            */
     /* ----------------------------------*/
 
-    if(id != kilo_uid) {
-      // check for valid crc
-      if(msg->crc == message_crc(msg)) {
-        // gather information about other kbs
-        // where it is?
-        // TODO local knowledge is now a buffer! change that
-        the_local_knowledge[id].state = msg->data[1];
-        // get arena coordinates
-        the_local_knowledge[id].coordinates.x = ((msg->data[2]&0b11) << 8) | (msg->data[3]);
-        the_local_knowledge[id].coordinates.y = ((msg->data[4]&0b11) << 8) | (msg->data[5]);
-        // get process (for interactive processes)
-        the_local_knowledge[id].area_pop = msg->data[6];
-        // update timestamp
-        the_local_knowledge[id].timestamp = kilo_ticks;
-      }
+    // parse the message
+    compressed_messsage c_message;
+    c_message.time_received = kilo_ticks;
+    c_message.resource_id = msg->data[1];
+    c_message.resource_pop = msg->data[2];
+
+    // store the message in the buffer
+    if(buffer_iterator == 255) {
+      buffer_iterator = 0; // check if this is the first message we receive
     }
+    last_received_messages[buffer_iterator] = c_message;
+
+    // circular buffer
+    if(buffer_iterator == BUFFER_SIZE-1) {
+      buffer_iterator = 0;
+    } else {
+      buffer_iterator++;
+    }
+
+    // UNCOMMENT IF NEEDED
+    // get other kb coordinates
+    /* the_local_knowledge[id].coordinates.x = ((msg->data[2]&0b11) << 8) | (msg->data[3]); */
+    /* the_local_knowledge[id].coordinates.y = ((msg->data[4]&0b11) << 8) | (msg->data[5]); */
   }
 }
-
 
 /*-------------------------------------------------------------------*/
 /* Send current kb status to the swarm                               */
 /*-------------------------------------------------------------------*/
 message_t *message_tx() {
-  /* this one is filled during the decision process */
+  /* this one is filled in the loop */
   return &interactive_message;
 }
 
@@ -257,172 +264,174 @@ void message_tx_success() {
 /* Sets ths current_decision var                                     */
 /*-------------------------------------------------------------------*/
 void take_decision() {
-  /* no valid interactive process yet, set crc to 0 */
-  interactive_message.crc = 0;
-  interactive_message.type = 1;
-
-  // get current area utility if any
-  u_int8_t area_pop = 0;
-  if(current_state == INSIDE_AREA_A) {
-    area_pop = resource_a.pop;
-  } else if(current_state == INSIDE_AREA_A) {
-    area_pop = resource_b.pop;
-  }
-
   /* Start decision process */
-  // these are not actually needed but are kept for debug purposes
-  u_int8_t commitment = 0;     // value for the commitment process
-  u_int8_t abandon = 0;        // value for the abandon process
-  u_int8_t recruitment = 0;    // value for the recruitment process
-  u_int8_t cross = 0;          // value for the corss-inhibition process
-
-
-  u_int8_t extraction = rand_soft(); // a random number to extract next decision
-  current_decision = NONE; // reset decision process
-
-  // if uncommitted
-  if(current_state != COMMITTED_AREA_A &&
-     current_state != COMMITTED_AREA_B) {
+  if(current_decision_state == NOT_COMMITTED) {
+    u_int8_t processes[RESOURCES_SIZE+1] = {0}; // store here all committment processes
 
     /****************************************************/
     /* spontaneous commitment process through discovery */
     /****************************************************/
+    u_int16_t sum_committments = 0;
 
-    // TODO conta numero di timestep passati su un area/risorsa e stima in qualche modo l'utilita' da quelli
-    // questo viene fatto nell'intervallo tra una decisione e l'altra
+    for(int i=0; i<RESOURCES_SIZE; i++) {
 
-    // fai tutti e due i processi insieme per non prioritizzare il discovery
-    // disc disc disc recr
 
-    // if not none then it discovered at least an area (i.e. over an area)
-    // if area_pop < 0 then wait for it to recover
-    if(current_state != NONE &&
-       area_pop > area_exploitation_threshold) {
-      commitment = area_pop*k;
+
+
+      // TODO population
+      if(resources_populations[i] > resources_umin[i]) {
+        // normalize between 0 and 255 according to k
+        processes[i] = resources_populations[i]*h;
+        sum_committments += processes[i];
+      }
     }
+    // TODO non normalizzare
+    /* sum_committments /= RESOURCES_SIZE; // normalize */
 
-    /* is the winning process? */
-    extraction -= commitment;
-    if(extraction <= 0) {
-      extraction = 255; // put it back to 255 to avoid extracion of a second winner
-      current_decision = COMMITTMENT; // save the winning process
-    }
 
     /****************************************************/
     /* recruitment over a random agent                  */
     /****************************************************/
+    // FIXME this only check for the first message
+    compressed_messsage recruitment_message = last_received_messages[0];
+    if(buffer_iterator != 255) {
+      u_int8_t index = rand_hard()*BUFFER_SIZE;
+      recruitment_message = last_received_messages[index];
+      // if the message is valid and
+      // the agent sending it committed and
+      // the population is above umin
 
-    // TODO doppia implementazione:
-    // 1) tieni in memoria solo l'ultimo messaggio e usa quello se ancora valido
-    // 2) tieni in memoria un buffer di messaggi e randomizza su quelli se ancora validi. uno per robot.
-    // questo per vedere come si comporta il sistema se well mixed
 
-    // Continua ad usare l'utilita' stimata dal kb che manda il messaggio
-
-    // da studiare anche come varia questa soluzione in base alla frequenza del take_decision()
-
-    u_int8_t random = (rand_soft()*num_of_kbs)/255; // a random agent
-    local_knowledge rand_agent = the_local_knowledge[random];
-    // if the message is still valid
-    if(rand_agent.timestamp - kilo_ticks < knowledge_not_valid_after) {
-      recruitment = rand_agent.area_pop*h;
-    }
-
-    /* is the winning process? */
-    extraction -= recruitment;
-    if(extraction <= 0) {
-      extraction = 255; // put it back to 255 to avoid extracion of a second winner
-      if(rand_agent.state == COMMITTED_AREA_A) {
-        current_decision = RECRUITMENT_A; // save the winning process
-      } else {
-        current_decision = RECRUITMENT_B; // save the winning process
+      // TODO population
+      if(kilo_ticks-recruitment_message.time_received < valid_until &&
+         recruitment_message.resource_id != 255 &&
+         recruitment_message.resource_pop > resources_umin[recruitment_message.resource_id]) {
+        processes[RESOURCES_SIZE] = recruitment_message.resource_pop*k;
       }
     }
+
+
+    /****************************************************/
+    /* extraction                                       */
+    /****************************************************/
+
+    /* check if the sum of all processes is below 1 (here 255 since normalize to u_int_8) */
+    /*                                  STOP                                              */
+    if(sum_committments+processes[RESOURCES_SIZE] > 255) {
+      internal_error = true;
+      return;
+    }
+
+    u_int8_t extraction = rand_hard(); // a random number to extract next decision
+    for(int i=0; i<RESOURCES_SIZE; i++) {
+      extraction -= processes[i];
+      if(extraction <= 0) {
+        current_decision_state = i;
+      }
+    }
+    extraction -= processes[RESOURCES_SIZE];
+    if(extraction <= 0) {
+      current_decision_state = recruitment_message.resource_id;
+    }
   } else {
+
 
     /****************************************************/
     /* abandon                                          */
     /****************************************************/
 
-    // TODO come sopra, due cose in parallelo e la somma delle prob non deve superare 1 altrimenti scoppia il macro
-
+    u_int8_t abandon = 0;
     /* leave immediately if reached the threshold */
-    if(area_pop <= area_exploitation_threshold) {
-      abandon = 255;
+
+
+
+    // TODO population
+    if(resources_populations[current_decision_state] <= resources_umin[current_decision_state]) {
+      abandon = 255*k;
     }
 
-    /* is the winning process? */
-    extraction -= abandon;
-    if(extraction <= 0) {
-      extraction = 255; // put it back to 255 to avoid extracion of a second winner
-      current_decision = ABANDON; // save the winning process
-    }
 
     /****************************************************/
     /* cross inhibtion over a random agent              */
     /****************************************************/
 
-    u_int8_t random = (rand_soft()*num_of_kbs)/255; // a random agent
-    local_knowledge rand_agent = the_local_knowledge[random];
-    // if the message is still valid
-    if(rand_agent.timestamp - kilo_ticks < knowledge_not_valid_after) {
-      cross = rand_agent.area_pop*k;
-    }
+    u_int8_t cross_inhibition = 0;
+    compressed_messsage cross_message;
+    if(buffer_iterator != 255) { // FIXME this only check for the first message
+      u_int8_t index = rand_hard()*BUFFER_SIZE;
+      cross_message = last_received_messages[index];
+      // if the message is valid and
+      // the agent sending it committed and
+      // the population is above umin
 
-    /* is the winning process? */
-    extraction -= cross;
-    if(extraction <= 0) {
-      extraction = 255; // put it back to 255 to avoid extracion of a second winner
-      if(rand_agent.state == COMMITTED_AREA_A) {
-        current_decision = INHIBITION_A; // save the winning process
-      } else {
-        current_decision = INHIBITION_B; // save the winning process
+
+
+
+      // TODO population
+      if(kilo_ticks-cross_message.time_received < valid_until &&
+         cross_message.resource_id != 255 &&
+         cross_message.resource_pop > resources_umin[cross_message.resource_id]) {
+        cross_inhibition = cross_message.resource_pop*k;
       }
     }
+
+
+    /****************************************************/
+    /* extraction                                       */
+    /****************************************************/
+
+    /* check if the sum of all processes is below 1 (here 255 since normalize to u_int_8) */
+    /*                                  STOP                                              */
+    if(abandon+cross_inhibition > 255) {
+      internal_error = true;
+      return;
+    }
+
+    u_int8_t extraction = rand_hard(); // a random number to extract next decision
+    extraction -= (abandon+cross_inhibition);
+    if(extraction <= 0) {
+      current_decision_state = NOT_COMMITTED;
+      return;
+    }
   }
-
-  /* Partially fill up the kb message  */
-  /* the rest is filled up in the loop */
-  interactive_message.data[0] = kilo_uid;
-  /* send out area pop for interactive processes */
-  interactive_message.data[6] = area_pop;
 }
-
 
 /*-------------------------------------------------------------------*/
 /* Function implementing the uncorrelated random walk                */
 /*-------------------------------------------------------------------*/
 void random_walk(){
-  // TODO use amaury random walk (better a levy than a brownian)
-  switch( current_motion_type ) {
+  switch (current_motion_type) {
   case TURN_LEFT:
-    if( kilo_ticks > last_decision_ticks + turning_ticks ) {
-      /* start moving forward */
-      last_decision_ticks = kilo_ticks;  // fixed time FORWARD
-      //	last_decision_ticks = rand() % max_straight_ticks + 1;  // random time FORWARD
-      set_motion(FORWARD);
-    }
   case TURN_RIGHT:
-    if( kilo_ticks > last_decision_ticks + turning_ticks ) {
+    /* if turned for enough time move forward */
+    if (kilo_ticks > last_motion_ticks + turning_ticks) {
       /* start moving forward */
-      last_decision_ticks = kilo_ticks;  // fixed time FORWARD
-      //	last_decision_ticks = rand() % max_straight_ticks + 1;  // random time FORWARD
+      last_motion_ticks = kilo_ticks;
       set_motion(FORWARD);
     }
     break;
   case FORWARD:
-    if( kilo_ticks > last_decision_ticks + max_straight_ticks ) {
-      /* perform a radnom turn */
-      last_decision_ticks = kilo_ticks;
-      if( rand()%2 ) {
+    /* if moved forward for enough time turn */
+    if (kilo_ticks > last_motion_ticks + straight_ticks) {
+      /* perform a random turn */
+      last_motion_ticks = kilo_ticks;
+      if (rand_soft() % 2) {
         set_motion(TURN_LEFT);
-      }
-      else {
+      } else {
         set_motion(TURN_RIGHT);
       }
-      turning_ticks = rand()%max_turning_ticks + 1;
+      // compute turning time
+      double angle = 0;
+      if(crw_exponent == 0) {
+          angle = (uniform_distribution(0, (M_PI)));
+      } else {
+        angle = fabs(wrapped_cauchy_ppf(crw_exponent));
+      }
+      turning_ticks = (uint32_t)((angle / M_PI) * max_turning_ticks);
+      straight_ticks = (uint32_t)(fabs(levy(std_motion_steps, levy_exponent)));
     }
     break;
+
   case STOP:
   default:
     set_motion(STOP);
@@ -434,17 +443,10 @@ void random_walk(){
 /* Init function                                                     */
 /*-------------------------------------------------------------------*/
 void setup() {
-    /* Initialise LED and motors */
-    set_color(RGB(0,0,0));
-    set_motors(0,0);
-
-    /* Initialise random seed */
-    uint8_t seed = rand_soft(); // use rand_soft that is faster
-    rand_seed(seed);
-
-    /* Initialise motion variables */
-    last_decision_ticks=rand()%max_straight_ticks;
-    set_motion(FORWARD);
+  /* Initialise LED and motors */
+  set_color(RGB(0,0,0));
+  /* Initialise motion variables */
+  set_motion(FORWARD);
 }
 
 
@@ -452,80 +454,60 @@ void setup() {
 /* Main loop                                                         */
 /*-------------------------------------------------------------------*/
 void loop() {
-  // TODO non prendere decisioni ad ogni step, prima devi prendere
-  // informazioni sulle qualita'.
-  // TODO ARK deve mandare informazioni solo sul piccolo cerchietto in cui e' il kb
-  // e non su tutta la risorsa
-  // TODO ARK deve vedere lo stato dei kbs dai led!
+  random_walk();
+  if(current_motion_type == STOP)
+    set_color(RGB(3,0,0));
+  else if (current_motion_type == FORWARD)
+    set_color(RGB(0,3,0));
+  else if (current_motion_type == TURN_RIGHT || current_motion_type == TURN_LEFT)
+    set_color(RGB(3,3,3));
+  return;
+  // visual debug. Signal internal decision errors
+  while(internal_error) {
+    set_color(RGB(0,1,0));
+    delay(500);
+    set_color(RGB(0,0,1));
+    delay(500);
+  }
 
-/*   // set color for area A red */
-/*   set_color(RGB(3,0,0)); */
-/*   // stop and exploit */
-/*   set_motors(0,0); */
-/*   set_motion(STOP); */
-/* } else if(sa_type == INSIDE_AREA_B) { */
-/*   // set color for area B green */
-/*   set_color(RGB(0,3,0)); */
-/*   // stop and exploit */
-/*   set_motors(0,0); */
-/*   set_motion(STOP); */
-/*  } else if(sa_type == OUTSIDE_AREA) { */
-/*   current_state = OUTSIDE_AREA; */
-/*   // search for something */
-/*   set_motion(FORWARD); */
-/*   last_decision_ticks=kilo_ticks; */
-/*  } */
-/* } */
-
-
-  // take decision only after exploration
+  /* take decision only after exploration */
   if(exploration_ticks <= kilo_ticks-last_decision_ticks) {
     take_decision();
     // reset last decision ticks
     last_decision_ticks = kilo_ticks;
+  }
 
-    if(current_decision == COMMITTMENT) {
-      // go to selected area
-      // con piu' risorse metti un for
-      if(current_state == INSIDE_AREA_A) {
-        current_state = COMMITTED_AREA_A;
-      } else if(current_state == INSIDE_AREA_B) {
-        current_state = COMMITTED_AREA_B;
-      }
+  if(current_decision_state != NOT_COMMITTED) {
+    // turn on red led if status is committed
+    set_color(RGB(3,0,0));
+    // if over the wanted resource
+    if(current_decision_state == current_arena_state) {
+      // stop and exploit the area
       set_motion(STOP);
-
-    } else if (current_decision == RECRUITMENT_A ||
-               current_decision == RECRUITMENT_B) {
-      // if recruited una volta reclutato vai in cerca dell'area A e finche' non la trovi non fai altro
-      random_walk();
-
-    } else if(current_decision == ABANDON){
-      // leave current area
-      current_state = NONE;
-      random_walk();
-
-    } else if(current_decision == INHIBITION_A ||
-              current_decision == INHIBITION_B) {
-      // leave the area
-      random_walk();
-    } else if(current_decision == NONE) {
-      random_walk();
+    } else {
+      random_walk(); // looking for the wanted resource
     }
   } else {
+    // simply continue as uncommitted and explore
     random_walk();
   }
 
-  /* fill up the rest of the message */
-  /* fill up the message of uint8 by splitting the uint16 */
-  interactive_message.data[2] = (my_coordinates.x >> 8); // hi part of the uint16
-  interactive_message.data[3] = (my_coordinates.x & 0xff); // lo part of the uint16
-  interactive_message.data[4] = (my_coordinates.y >> 8); // hi part of the uint16
-  interactive_message.data[5] = (my_coordinates.y & 0xff); // lo part of the uint16
-
-  /* fill up the current state */
-  interactive_message.data[1] = current_state;
+  /* fill up message type. Type 1 used for kbs */
+  interactive_message.type = 1;
+  /* fill up the current kb id */
+  interactive_message.data[0] = kilo_uid;
+  /* fill up the current states */
+  interactive_message.data[1] = current_arena_state;
+  interactive_message.data[2] = current_decision_state;
   /* fill up the crc */
   interactive_message.crc = message_crc(&interactive_message);
+
+  // UNCOMMENT IF NEEDED
+  /* fill up the message of uint8 by splitting the uint16 */
+  /* interactive_message.data[2] = (my_coordinates.x >> 8); // hi part of the uint16 */
+  /* interactive_message.data[3] = (my_coordinates.x & 0xff); // lo part of the uint16 */
+  /* interactive_message.data[4] = (my_coordinates.y >> 8); // hi part of the uint16 */
+  /* interactive_message.data[5] = (my_coordinates.y & 0xff); // lo part of the uint16 */
 }
 
 int main() {

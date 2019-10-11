@@ -13,7 +13,6 @@ ResourceALF::ResourceALF(UInt8 type, TConfigurationNode& t_tree) : type(type), a
     if(tType == type) {
       // initial population
       GetNodeAttribute(*itNodes, "initial_population", this->population);
-
       // growth parameters
       GetNodeAttribute(*itNodes, "k", this->k  );
       GetNodeAttribute(*itNodes, "eta", this->eta);
@@ -21,6 +20,8 @@ ResourceALF::ResourceALF(UInt8 type, TConfigurationNode& t_tree) : type(type), a
 
       // areas of the resource
       this->areas.reserve(100);
+      // compute discretized population (it is usefull to have population between 0 and 1)
+      this->discretized_population = this->population * this->k;
     }
   }
 }
@@ -81,11 +82,10 @@ bool ResourceALF::doStep(const std::vector<CVector2>& kilobot_positions, const s
   }
 
   // update population
-  population = areas.size();
-  population += ceil(population*eta*(1-(population/k)));
-
+  population += population*eta*(1-(areas.size()/k));
+  discretized_population = ceil(population*k);
   // check how many areas we have to generate now
-  UInt8 diff = population - areas.size();
+  UInt8 diff = ceil(discretized_population - areas.size());
   generate(areas, arena_size, diff);
 
   return population < umin;

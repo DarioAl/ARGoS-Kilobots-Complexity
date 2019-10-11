@@ -5,9 +5,9 @@
     <!-- * General configuration * -->
     <!-- ************************* -->
     <framework>
-        <system threads="0" />
+        <system threads="4" />
         <experiment length="0"
-        ticks_per_second="10"
+        ticks_per_second="1"
         random_seed="1234" />
     </framework>
 
@@ -19,8 +19,10 @@
         <kilobot_controller id="listener">
             <actuators>
                 <differential_steering implementation="default"
-                bias_avg="0.000015"
-                bias_stddev="0.00186"
+                bias_avg="0.000"
+                bias_stddev="0.00"
+                factor_avg="1"
+                factor_stddev="0.00010"
                 />
                 <kilobot_led implementation="default" />
                 <kilobot_communication implementation="default" />
@@ -43,32 +45,45 @@
         <tracking
             position="true"
             orientation="false"
-            color="false">
+            color="true">
         </tracking>
 
         <variables
             datafilename="data_file.txt"
             dataacquisitionfrequency="100"
-            environmentplotupdatefrequency="10"
+            environmentplotupdatefrequency="1"
             timeforonemessage="0.05">
         </variables>
 
         <environments>
           <resource
             type="0"
-            initial_population = "5"
+            initial_population = "0.1"
             eta="0.1"
-            k="100"
-            umin="20">
+            k="10"
+            umin="2">
           </resource>
+          <!-- <resource -->
+          <!--   type="1" -->
+          <!--   initial_population = "1" -->
+          <!--   eta="0.0001" -->
+          <!--   k="50" -->
+          <!--   umin="10"> -->
+          <!-- </resource> -->
+          <!-- <resource -->
+          <!--   type="2" -->
+          <!--   initial_population = "1" -->
+          <!--   eta="0.0001" -->
+          <!--   k="50" -->
+          <!--   umin="10"> -->
+          <!-- </resource> -->
        </environments>
-
     </loop_functions>
 
     <!-- *********************** -->
     <!-- * Arena configuration * -->
     <!-- *********************** -->
-    <arena size="2, 2, 4" center="0,0,0.5">
+    <arena size="2, 2, 4" center="0,0,0.5" pixel_per_meter="200">
         <box id="wall_north" size="2,0.01,0.1" movable="false">
             <body position="0,1,0" orientation="0,0,0" />
         </box>
@@ -86,7 +101,7 @@
         <distribute>
           <position method="uniform" min="-0.9,-0.9,0" max="0.9,0.9,0" />
             <orientation method="uniform" min="0,0,0" max="360,0,0" />
-            <entity quantity="15" max_trials="100">
+            <entity quantity="100" max_trials="100">
                 <kilobot id="kb">
                     <controller config="listener"/> <dynamics2d friction="0.7" />
                 </kilobot>
