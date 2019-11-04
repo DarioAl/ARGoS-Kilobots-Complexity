@@ -22,13 +22,17 @@ echo "$CONFIGURATION_FILE" | egrep "^$SHARED_DIR" &> /dev/null || exit 1
 
 areas="25 50 75 100 125 150 175 200 250"
 
-for par1 in $areas; do
-    filename=`printf 'config_complexity_areas%03d.argos' $par1`
-    config=`printf 'config_complexity_areas%03d.argos' $par1`
-    cp $base_config $config
-    sed -i "s|__AREAS__|$par1|g" $config
-    sed -i "s|__OUTPUT__|$par1|g" $config
-    echo "Running next configuration AREAS $par1"
-    echo "argos3 -c $1$config"
-    argos3 -c './'$config
+RUNS=5
+for ((it=1;i<=RUNS;i++)); do
+    for par1 in $areas; do
+        filename=`printf 'config_complexity_areas%03d.argos' $par1`
+        config=`printf 'config_complexity_areas%03d.argos' $par1`
+        cp $base_config $config
+        sed -i "s|__SEED__|$it|g" $config
+        sed -i "s|__AREAS__|$par1|g" $config
+        sed -i "s|__OUTPUT__|$par1$it|g" $config
+        echo "Running next configuration AREAS $par1"
+        echo "argos3 -c $1$config"
+        argos3 -c './'$config
+    done
 done

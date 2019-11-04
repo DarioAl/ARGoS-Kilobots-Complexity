@@ -10,6 +10,7 @@
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 #include <limits.h>
 
 #include "distribution_functions.c"
@@ -103,7 +104,7 @@ bool internal_error = false;
 
 /* Variables for Smart Arena messages */
 u_int8_t sa_type = 0; // smart arena type (i.e. resource id)
-u_int8_t resources_hits[RESOURCES_SIZE][TEMPORAL_WINDOWS] = {0}; // number of hits in a given time window
+u_int8_t resources_hits[RESOURCES_SIZE] = {0}; // number of hits for each resource, to be compute by mean of an exp avg
 u_int8_t resources_populations[RESOURCES_SIZE] = {0}; // keep local knowledge about resources
 u_int8_t resources_umin[RESOURCES_SIZE] = {0}; // keep local knowledge about resources umin
 
@@ -133,12 +134,13 @@ u_int8_t valid_until = 100;
 /* buffer definitions storing information from other kbs */
 u_int8_t buffer_iterator = 255;
 typedef struct compressed_messsage {
-  u_int32_t time_received; // time stamp
-  u_int8_t resource_id;    // id of the current resource
-  u_int8_t resource_pop;   // estimated population of the current resource
+  u_int32_t time_received;   // time stamp
+  u_int8_t current_decision; // agent decision
+  u_int8_t resource_id;      // id of the current resource
+  u_int8_t resource_pop;     // estimated population of the current resource
 } compressed_messsage;
 compressed_messsage last_received_messages[BUFFER_SIZE];
-u_int8_t messages_count_per_window[TEMPORAL_WINDOWS];
+u_int8_t messages_count;
 
 /*-------------------------------------------------------------------*/
 /* Function for setting the motor speed                              */
@@ -166,44 +168,44 @@ void set_motion(motion_t new_motion_type) {
   }
 }
 
+
 /*-------------------------------------------------------------------*/
 /* Merge received information about the population of the area on    */
 /* which the kb is on. Kilobots can only perceive locally and try to */
 /* estimate the population of a resource                             */
-/*                                                                   */
-/* we use the concept of time windows and compute the number of hits */
-/* in each of those. We then sum up all the hits at different times  */
-/* and scale those far beyond in time by an exponential time scale   */
-/* factor, giving more weight to those closer (in time).             */
 /*-------------------------------------------------------------------*/
+void exponential_average(u_int8_t resource_id, u_int8_t resource_pop) {
+  float alpha = 0.9;
+  // update by using exponential moving averagae to update estimated population
+  // see https://en.wikipedia.org/wiki/Moving_average#Exponential_moving_average
+  resources_populations[resource_id] = alpha*(resource_pop)+(1-alpha)+resources_populations[resource_id];
+}
+
 void merge_scan(bool time_window_is_over) {
-  // TODO questa non va bene perche' aumenta e basta la stima della popolazione,
-  // noi invece vogliamo anche abbassarla... e' un casino di merda per fare sta cosa
-  // valutare la possibilita' di passarla da sopra.
-  // altrimenti serve un modo per stabilire come far descrescere l'utilita'.
-  // Tipo "non la vedo come prima" oppure non so...
-
   if(time_window_is_over) {
-    for(int i=0; i<RESOURCES_SIZE-1; ++i) {
-      // re-estimate population
-      u_int8_t estimated_pop = (resources_hits[i][0]/messages_count_per_window[0]); // *exp(TEMPORAL_WINDOWS/4);
-
-      for(int j=1; j<TEMPORAL_WINDOWS; ++j) {
-        // compute current time window estimation
-        estimated_pop += (resources_hits[i][j]/messages_count_per_window[j]); //*exp(TEMPORAL_WINDOWS-j/4);
-
-        // shift and reset temporal windows
-        resources_hits[i][j-1] = resources_hits[i][j];
-        resources_hits[i][j] = 0;
+    for(u_int8_t i=0; i<RESOURCES_SIZE-1; ++i) {
+      // counts all other resoruces hits
+      u_int8_t hits_otherResources = 0;
+      for(u_int8_t j=0; i<RESOURCES_SIZE-1; j++) {
+        if(i==j)
+          continue;
+        hits_otherResources += resources_hits[j];
       }
-
-      // update estimated population
-      resources_populations[i] = (estimated_pop*255)/TEMPORAL_WINDOWS;
+      /*-------------------------------------------------------------------*/
+      /*            estimate population at current window                  */
+      /* the formula used to estimate the population is as follows:        */
+      /* hits_i/(hits_i+hits_empty) * (1-(hits_otherResources/all_hits))   */
+      /*-------------------------------------------------------------------*/
+      u_int8_t estimated_pop = resources_hits[i]/(messages_count-hits_otherResources+resources_hits[i]) * (1-(hits_otherResources/messages_count));
+      // update by mean of exponential moving average
+      exponential_average(i, estimated_pop);
     }
+    // reset hits counts
+    memset(resources_hits, 0, sizeof(resources_hits));
   } else {
     // simply add the hit to the hits count
     if(current_arena_state != 255)
-      resources_hits[current_arena_state][TEMPORAL_WINDOWS-1]++;
+      resources_hits[current_arena_state]++;
   }
 }
 
@@ -231,7 +233,10 @@ void message_rx(message_t *msg, distance_measurement_t *d) {
     // the smart arena type is where the kb is first byte of the payload
     // can be NONE (255) or resource id 0<id<254
     current_arena_state = (msg->data[1]); // get resource position
-    if(current_arena_state != 255) {
+    // update only if not committed or committed and not in area
+    // NOTE this works until the indexes for the two enums are ordered!!!
+    if(current_decision_state == 255 ||
+       (current_decision_state != 255 && current_decision_state != current_arena_state)) {
       resources_umin[current_arena_state] = (msg->data[2]); // get umin for the resource
       merge_scan(false);
     }
@@ -248,21 +253,37 @@ void message_rx(message_t *msg, distance_measurement_t *d) {
     // parse the message
     compressed_messsage c_message;
     c_message.time_received = kilo_ticks;
-    c_message.resource_id = msg->data[1];
-    c_message.resource_pop = msg->data[2];
+    c_message.current_decision = msg->data[1];
+    c_message.resource_id = msg->data[2];
+    // only store this one if the agent is committed
+    // we are not going to use it anyway but it is bettere to avoid bad data
+    if (msg->data[1] != 255) {
+      c_message.resource_pop = msg->data[3];
+    }
 
     // store the message in the buffer
     if(buffer_iterator == 255) {
+      for(u_int8_t i=0; i<BUFFER_SIZE; i++) {
+        // trick to avoid accessing bad data at the very beginning
+        // this will be filled very soon with good data anyway
+        last_received_messages[1] = c_message;
+      }
       buffer_iterator = 0; // check if this is the first message we receive
-    }
-    last_received_messages[buffer_iterator] = c_message;
-
-    // circular buffer
-    if(buffer_iterator == BUFFER_SIZE-1) {
-      buffer_iterator = 0;
     } else {
-      buffer_iterator++;
+      last_received_messages[buffer_iterator] = c_message;
+
+      // circular buffer
+      if(buffer_iterator == BUFFER_SIZE-1) {
+        buffer_iterator = 0;
+      } else {
+        buffer_iterator++;
+      }
     }
+
+    // now check for received utilities
+    // and use these to update our perceived utilities
+    exponential_average(msg->data[3], msg->data[4]);
+    exponential_average(msg->data[5], msg->data[6]);
 
     // UNCOMMENT IF NEEDED
     // get other kb coordinates
@@ -301,7 +322,6 @@ void take_decision() {
     u_int16_t sum_committments = 0;
 
     for(int i=0; i<RESOURCES_SIZE; i++) {
-      // TODO population
       if(resources_populations[i] > resources_umin[i]) {
         // normalize between 0 and 255 according to k
         processes[i] = resources_populations[i]*h;
@@ -312,7 +332,6 @@ void take_decision() {
     /****************************************************/
     /* recruitment over a random agent                  */
     /****************************************************/
-    // FIXME this only check for the first message
     compressed_messsage recruitment_message = last_received_messages[0];
     if(buffer_iterator != 255) {
       u_int8_t index = rand_hard()*BUFFER_SIZE;
@@ -321,9 +340,8 @@ void take_decision() {
       // the agent sending it committed and
       // the population is above umin
 
-      // TODO population
       if(kilo_ticks-recruitment_message.time_received < valid_until &&
-         recruitment_message.resource_id != 255 &&
+         recruitment_message.current_decision != 255 &&
          recruitment_message.resource_pop > resources_umin[recruitment_message.resource_id]) {
         processes[RESOURCES_SIZE] = recruitment_message.resource_pop*k;
       }
@@ -361,13 +379,10 @@ void take_decision() {
     u_int8_t abandon = 0;
     /* leave immediately if reached the threshold */
 
-
-
     // TODO population
     if(resources_populations[current_decision_state] <= resources_umin[current_decision_state]) {
       abandon = 255*k;
     }
-
 
     /****************************************************/
     /* cross inhibtion over a random agent              */
@@ -381,18 +396,13 @@ void take_decision() {
       // if the message is valid and
       // the agent sending it committed and
       // the population is above umin
-
-
-
-
       // TODO population
       if(kilo_ticks-cross_message.time_received < valid_until &&
-         cross_message.resource_id != 255 &&
+         cross_message.current_decision != 255 &&
          cross_message.resource_pop > resources_umin[cross_message.resource_id]) {
         cross_inhibition = cross_message.resource_pop*k;
       }
     }
-
 
     /****************************************************/
     /* extraction                                       */
@@ -521,8 +531,22 @@ void loop() {
   /* fill up the current kb id */
   interactive_message.data[0] = kilo_uid;
   /* fill up the current states */
-  interactive_message.data[1] = current_arena_state;
-  interactive_message.data[2] = current_decision_state;
+  interactive_message.data[1] = current_decision_state;
+  interactive_message.data[2] = current_arena_state;
+
+  /* if committed share your utility */
+  if(current_decision_state != 255) {
+    interactive_message.data[3] = resources_populations[current_decision_state];
+    interactive_message.data[4] = resources_populations[current_decision_state];
+  } else {
+    /* share a random utility */
+    interactive_message.data[3] = rand_hard()*RESOURCES_SIZE;
+    interactive_message.data[4] = resources_populations[interactive_message.data[3]];
+  }
+  /* share also a second random other utility */
+  interactive_message.data[5] = rand_hard()*RESOURCES_SIZE;
+  interactive_message.data[6] = resources_populations[interactive_message.data[5]];
+
   /* fill up the crc */
   interactive_message.crc = message_crc(&interactive_message);
 
