@@ -38,6 +38,7 @@ class CSimulator;
 #include <argos3/plugins/robots/kilobot/simulator/kilobot_communication_entity.h>
 #include <argos3/plugins/robots/kilobot/simulator/kilobot_communication_medium.h>
 #include <argos3/plugins/robots/kilobot/simulator/kilobot_communication_default_actuator.h>
+#include <argos3/plugins/simulator/entities/box_entity.h>
 
 //kilobot messaging
 #include <argos3/plugins/robots/kilobot/control_interface/kilolib.h>
@@ -46,7 +47,7 @@ class CSimulator;
 
 //resources area
 #include "resource.h"
-
+#include <vector>
 #include <array>
 
 using namespace argos;
@@ -54,6 +55,12 @@ using namespace argos;
 class CComplexityALF : public CALF {
 
 public:
+  // circular arena variables
+  Real circular_arena_radius; // radius for the circular arena
+  Real circular_arena_width;  // wall width
+  Real circular_arena_height; // wall height
+  Real circular_arena_walls;  // number of walls
+
   /** < constructor */
   CComplexityALF();
   /** < destructor */
@@ -81,6 +88,9 @@ public:
   /** Get experiment variables */
   void GetExperimentVariables(TConfigurationNode& t_tree);
 
+  /** Update the environment */
+  void UpdateVirtualEnvironments();
+
   /** Triggers the update of the kilobts and is also used to update the areas accordingly */
   void UpdateKilobotStates();
 
@@ -98,9 +108,8 @@ private:
   /************************************/
   /*  virtual Environment variables   */
   /************************************/
-
-  CVector3 arena_size; // size of the arena
   std::vector<ResourceALF> resources;    // all resources
+  std::vector<AreaALF> areas; // all areas in the arena
 
   /************************************/
   /* virtual environment struct*/
@@ -111,8 +120,12 @@ private:
    */
   std::vector<UInt8> m_vecKilobotStates;
 
-  /* used to store the position of each kilobot */
-  std::vector<CVector2> m_vecCommittedKilobotsPositions;
+  /* used to store the position of each committed kilobot in each resource */
+  /* green light means the kb is committed and working in position         */
+  /* red light means the kb is committed but still looking for a spot      */
+  /* here, only those with a green light are stored, this vector is used   */
+  /* to update the areas doStep                                            */
+  std::vector<CVector2> m_vecKilobotsPositions;
 
   /* used to store the last message sent to each kilobot */
   std::vector<Real> m_vecLastTimeMessaged;
@@ -124,10 +137,8 @@ private:
 
   /* output file for data acquizition */
   std::ofstream m_cOutput;
-
   /* output file name*/
   std::string m_strOutputFileName;
-
   /* data acquisition frequency in ticks */
   UInt16 m_unDataAcquisitionFrequency;
 };

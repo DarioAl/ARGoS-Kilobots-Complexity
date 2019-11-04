@@ -1,10 +1,24 @@
 #include "complexity_ALF.h"
 
+// Enable this part of the code to log the perceived utility estimation in the log file
+#define DISTRIBUTION_ESTIMATION
+#ifdef DISTRIBUTION_ESTIMATION
+Real time_last_estimation = 0; // when the last estimation has been computed
+UInt8 time_window_for_estimation = 20; // how long an estimation is
+Real sent_messages = 0; // number of messages sent time_last_estimation
+UInt8 hit_resource = 0; // number of hits since time_last_estimation
+UInt8 hit_empty_space = 0; // number of empty hits since time_last_estimation
+#endif
+
 /****************************************/
 /****************************************/
 
 CComplexityALF::CComplexityALF() :
-  m_unDataAcquisitionFrequency(10) {}
+  m_unDataAcquisitionFrequency(10),
+  circular_arena_radius(0.45),
+  circular_arena_width(0.01),
+  circular_arena_height(0.05),
+  circular_arena_walls(50) {}
 
 /****************************************/
 /****************************************/
@@ -44,7 +58,7 @@ void CComplexityALF::Destroy() {
 void CComplexityALF::SetupInitialKilobotStates() {
   /* allocate space for the vectores */
   m_vecKilobotStates.resize(m_tKilobotEntities.size());
-  m_vecCommittedKilobotsPositions.resize(m_tKilobotEntities.size());
+  m_vecKilobotsPositions.resize(m_tKilobotEntities.size());
   m_vecLastTimeMessaged.resize(m_tKilobotEntities.size());
   m_fMinTimeBetweenTwoMsg = Max<Real>(1.0, m_tKilobotEntities.size() * m_fTimeForAMessage / 3.0);
   for(UInt16 it=0;it< m_tKilobotEntities.size();it++){
@@ -61,6 +75,31 @@ void CComplexityALF::SetupInitialKilobotState(CKilobotEntity &c_kilobot_entity){
   UInt16 unKilobotID=GetKilobotId(c_kilobot_entity);
   m_vecKilobotStates[unKilobotID] = 255;
   m_vecLastTimeMessaged[unKilobotID] = -1000;
+
+  /* Get a random rotation within the circular arena */
+  CQuaternion rand_rot;
+  CRadians rand_rot_angle(((Real) rand()/(RAND_MAX)-0.5)*CRadians::PI.GetValue());
+  // rand_rot.FromEulerAngles(rand_rot_angle, CRadians::ZERO, CRadians::ZERO);
+
+  /* Get a non-colliding random position within the circular arena */
+  bool distant_enough = false;
+  Real rand_angle, rand_displacement_x, rand_displacement_y;
+  CVector3 rand_pos;
+
+  UInt16 maxTries = 999;
+  UInt16 tries = 0;
+
+  do {
+    rand_angle = ((Real) rand()/(RAND_MAX))*2*CRadians::PI.GetValue();
+    rand_displacement_x = ((Real) rand()/(RAND_MAX))*(circular_arena_radius-0.025);
+    rand_displacement_y = ((Real) rand()/(RAND_MAX))*(circular_arena_radius-0.025);
+    rand_pos = CVector3(rand_displacement_x*sin(rand_angle),rand_displacement_y*cos(rand_angle),0);
+
+    distant_enough = MoveEntity(c_kilobot_entity.GetEmbodiedEntity(), rand_pos, rand_rot, false);
+    if(tries == maxTries-1) {
+      std::cerr << "ERROR: too many tries and not an available spot for the area" << std::endl;
+    }
+  } while(!distant_enough);
 }
 
 /****************************************/
@@ -68,7 +107,23 @@ void CComplexityALF::SetupInitialKilobotState(CKilobotEntity &c_kilobot_entity){
 
 
 void CComplexityALF::SetupVirtualEnvironments(TConfigurationNode& t_tree){
-  arena_size = CVector3(2,2,4);
+  // generate circular arena
+  std::ostringstream entity_id;
+  CRadians wall_angle = CRadians::TWO_PI / circular_arena_walls;
+  CVector3 wall_size(circular_arena_width, 2.0 * circular_arena_radius * Tan(CRadians::PI / circular_arena_walls), circular_arena_height);
+
+  for (UInt32 i = 0; i < circular_arena_walls; i++) {
+    entity_id.str("");
+    entity_id << "wall_" << i;
+
+    CRadians wall_rotation = wall_angle * i;
+    CVector3 wall_position(circular_arena_radius * Cos(wall_rotation), circular_arena_radius * Sin(wall_rotation), 0);
+    CQuaternion wall_orientation;
+    wall_orientation.FromEulerAngles(wall_rotation, CRadians::ZERO, CRadians::ZERO);
+
+    CBoxEntity *wall = new CBoxEntity(entity_id.str(), wall_position, wall_orientation, false, wall_size);
+    AddEntity(*wall);
+  }
 
   // initialize resources
   TConfigurationNode& tVirtualEnvironmentsNode = GetNode(t_tree, "environments");
@@ -76,18 +131,16 @@ void CComplexityALF::SetupVirtualEnvironments(TConfigurationNode& t_tree){
   // to check against xml
   UInt8 tType;
   // needed for generation
-  std::vector<AreaALF> allAreas;
-
   for(itNodes=itNodes.begin(&tVirtualEnvironmentsNode); itNodes!=itNodes.end(); ++itNodes) {
     GetNodeAttribute(*itNodes, "type", tType);
     ResourceALF resource(tType, t_tree);
     resources.push_back(resource);
-    allAreas.insert(std::end(allAreas), std::begin(resource.areas), std::end(resource.areas));
+    areas.insert(std::end(areas), std::begin(resource.areas), std::end(resource.areas));
   }
 
   std::vector<CVector2> area_positions;
   for(ResourceALF& resource : resources) {
-    resource.generate(allAreas, arena_size, resource.discretized_population);
+    resource.generate(areas, circular_arena_radius, resource.discretized_population);
   }
 }
 
@@ -108,28 +161,26 @@ void CComplexityALF::GetExperimentVariables(TConfigurationNode& t_tree){
 }
 
 /***********************************************/
-/* Override ALF function to enable areas update */
+/***********************************************/
+
+void CComplexityALF::UpdateVirtualEnvironments() {
+  // now do step and eventually generate new areas
+  for(ResourceALF& resource : resources) {
+    resource.doStep(m_vecKilobotsPositions, m_vecKilobotStates, areas, circular_arena_radius);
+  }
+}
+
+/***********************************************/
 /***********************************************/
 
 void CComplexityALF::UpdateKilobotStates(){
   // resets kbs states and positions
   this->m_vecKilobotStates.clear();
-  this->m_vecCommittedKilobotsPositions.clear();
+  this->m_vecKilobotsPositions.clear();
 
   for(UInt16 it=0;it< m_tKilobotEntities.size();it++){
     /* Update the virtual states and actuators of the kilobot*/
     UpdateKilobotState(*m_tKilobotEntities[it]);
-  }
-
-  // now get all areas (FIXME make it more efficient)
-  std::vector<AreaALF> allAreas;
-  for(const ResourceALF& resource : resources) {
-    allAreas.insert(std::end(allAreas), std::begin(resource.areas), std::end(resource.areas));
-  }
-
-  // now do step and eventually generate new areas
-  for(ResourceALF& resource : resources) {
-    resource.doStep(m_vecCommittedKilobotsPositions, allAreas, arena_size);
   }
 }
 
@@ -139,27 +190,23 @@ void CComplexityALF::UpdateKilobotStates(){
 /****************************************/
 
 void CComplexityALF::UpdateKilobotState(CKilobotEntity &c_kilobot_entity){
+
   // current kb id
   UInt16 unKilobotID = GetKilobotId(c_kilobot_entity);
-  // pre-check to avoid the two nested loops (those really slow down the simulation)
-  // since we only need the kbs position of those committed (showing a RED led)
-  if(GetKilobotLedColor(c_kilobot_entity) != CColor::RED) {
-    // the kb is not committed to any area
-    // 255 is the state value reserved for none
-    m_vecKilobotStates[unKilobotID] = 255;
-    return;
-  }
-
-  // update the position of the kilobots and store it for later use
-  this->m_vecCommittedKilobotsPositions.push_back(GetKilobotPosition(c_kilobot_entity));
+  m_vecKilobotStates[unKilobotID] = 255;
 
   // check against resources
   for(const ResourceALF& resource : resources) {
     for(const AreaALF& area : resource.areas) {
       // distance from the center of area
-      if(SquareDistance(m_vecCommittedKilobotsPositions.back(), area.position) < pow(area.radius,2)) {
-        // update the state of the kilobot and store it for later use
+      if(SquareDistance(GetKilobotPosition(c_kilobot_entity), area.position) < pow(area.radius,2)) {
+        // update the state and position of the kilobot and store it for later use
         m_vecKilobotStates[unKilobotID] = resource.type;
+        // if the led color of a kilobot is green  means it is committed and working in place
+        // hence store its position to update the resource that are exploited
+        if(GetKilobotLedColor(c_kilobot_entity) == CColor::GREEN) {
+          m_vecKilobotsPositions.push_back(GetKilobotPosition(c_kilobot_entity));
+        }
         // got it, no need to search anymore
         return;
       }
@@ -181,16 +228,6 @@ void CComplexityALF::UpdateVirtualSensor(CKilobotEntity &c_kilobot_entity){
     // if the time is too short, the kilobot cannot receive a message
     return;
   } else {
-    // Fill the payload by sending only id and state
-    UInt8 state = (UInt8) m_vecKilobotStates[unKilobotID]; // retrieve kb status
-
-    // UNCOMMENT IF NEEDED
-    // 2 bytes for x coordinate
-    // 2 bytes for y coordinate
-    // CVector2 kb_position = GetKilobotPosition(c_kilobot_entity);
-    // UInt16 x_coord = (UInt16) (kb_position.GetX()*1000);
-    // UInt16 y_coord = (UInt16) (kb_position.GetY()*1000);
-
     /* Prepare the inividual kilobot's message */
     m_tMessages[unKilobotID].type = 0; // using type 0 to signal ark messages
     /* Save time for next messages */
@@ -198,13 +235,17 @@ void CComplexityALF::UpdateVirtualSensor(CKilobotEntity &c_kilobot_entity){
 
     /* Fill up the kb message */
     m_tMessages[unKilobotID].data[0] = unKilobotID;
-    m_tMessages[unKilobotID].data[1] = state; // the resource id
-    if(state != 255) {
-      m_tMessages[unKilobotID].data[2] = resources.at(state).umin;
-      m_tMessages[unKilobotID].data[3] = resources.at(state).k;
+    m_tMessages[unKilobotID].data[1] = m_vecKilobotStates[unKilobotID]; // the resource id
+    if(m_vecKilobotStates[unKilobotID] != 255) {
+      m_tMessages[unKilobotID].data[2] = resources.at(m_vecKilobotStates[unKilobotID]).umin;
     }
-
     // UNCOMMENT IF NEEDED
+    // 2 bytes for x coordinate
+    // 2 bytes for y coordinate
+    // CVector2 kb_position = GetKilobotPosition(c_kilobot_entity);
+    // UInt16 x_coord = (UInt16) (kb_position.GetX()*1000);
+    // UInt16 y_coord = (UInt16) (kb_position.GetY()*1000);
+
     // fill up the message of uint8 by splitting the uin16
     // m_tMessages[unKilobotID].data[2] = (x_coord >> 8); // hi part of the uint16
     // m_tMessages[unKilobotID].data[3] = (x_coord & 0xff); // lo part of the uint16
@@ -212,6 +253,25 @@ void CComplexityALF::UpdateVirtualSensor(CKilobotEntity &c_kilobot_entity){
     // m_tMessages[unKilobotID].data[5] = (y_coord & 0xff); // lo part of the uint16
     // to concatenate back use
     // UInt16 ycord = (((UInt16)data[4] << 8) | data[5]);
+
+#ifdef DISTRIBUTION_ESTIMATION
+    if(m_fTimeInSeconds-time_last_estimation >= time_window_for_estimation) {
+      // store in the log file
+      m_cOutput << hit_resource << ", " << hit_empty_space << ", " << sent_messages << std::endl;
+      // update time_last_estimation
+      time_last_estimation = m_fTimeInSeconds;
+      // reset counters
+      hit_resource = 0;
+      hit_empty_space = 0;
+    } else {
+      sent_messages++;
+      if(m_vecKilobotStates[unKilobotID] != 255) {
+        hit_empty_space++;
+      } else {
+        hit_resource++;
+      }
+    }
+#endif
 
     /* Sending the message using the overhead controller */
     GetSimulator().GetMedium<CKilobotCommunicationMedium>("kilocomm").SendOHCMessageTo(c_kilobot_entity,&m_tMessages[unKilobotID]);

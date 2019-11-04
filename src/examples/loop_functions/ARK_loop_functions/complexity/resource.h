@@ -60,7 +60,7 @@ class ResourceALF {
   /*
    * generate areas for the resource by taking into account all other areas positions
    */
-  void generate(const std::vector<AreaALF>& oth_areas, const CVector3& arena_size, uint num_of_areas);
+  void generate(std::vector<AreaALF>& oth_areas, const Real arena_size, uint num_of_areas);
 
   /*
    * do one simulation step during which:
@@ -69,7 +69,7 @@ class ResourceALF {
    *
    * @return true if a specific min value is reached
    */
-  bool doStep(const std::vector<CVector2>& kilobot_positions, const std::vector<AreaALF>& oth_areas, const CVector3& arena_size);
+  bool doStep(const std::vector<CVector2>& kilobot_positions, const std::vector<UInt8> kilobot_states, const std::vector<AreaALF>& oth_areas, const Real arena_radius);
 
 };
 

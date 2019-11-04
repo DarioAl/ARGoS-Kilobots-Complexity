@@ -1,6 +1,6 @@
 #include "resource.h"
 
-ResourceALF::ResourceALF(UInt8 type, TConfigurationNode& t_tree) : type(type), area_radius(0.025) {
+ResourceALF::ResourceALF(UInt8 type, TConfigurationNode& t_tree) : type(type), area_radius(0.04) {
   /* Get the virtual environments node from the .argos file */
   TConfigurationNode& tVirtualEnvironmentsNode = GetNode(t_tree, "environments");
   TConfigurationNodeIterator itNodes;
@@ -17,56 +17,60 @@ ResourceALF::ResourceALF(UInt8 type, TConfigurationNode& t_tree) : type(type), a
       GetNodeAttribute(*itNodes, "k", this->k  );
       GetNodeAttribute(*itNodes, "eta", this->eta);
       GetNodeAttribute(*itNodes, "umin", this->umin);
-
       // areas of the resource
-      this->areas.reserve(100);
+      this->areas.reserve(k);
       // compute discretized population (it is usefull to have population between 0 and 1)
       this->discretized_population = this->population * this->k;
     }
   }
 }
 
-void ResourceALF::generate(const std::vector<AreaALF>& oth_areas, const CVector3& arena_size, uint num_of_areas) {
+void ResourceALF::generate(std::vector<AreaALF>& oth_areas, const Real arena_radius, uint num_of_areas) {
   CVector2 pos;
-  uint tries;
+  UInt16 tries = 0; // placement tries
+  UInt16 maxTries = 999; // max placement tries
 
   for(UInt32 i=0; i<num_of_areas; ++i) {
-    for(tries = 0; tries < 500; tries++) {
-      // generate first try
-      pos = CVector2((arena_size.GetX()*0.9)*((Real) rand()/(RAND_MAX)-0.5),
-                     (arena_size.GetY()*0.9)*((Real) rand()/(RAND_MAX)-0.5));
+    for(tries = 0; tries <= maxTries; tries++) {
+      Real rand_angle = ((Real) rand()/(RAND_MAX))*2*CRadians::PI.GetValue();
+      Real rand_displacement_x = ((Real) rand()/(RAND_MAX))*(arena_radius-area_radius);
+      Real rand_displacement_y = ((Real) rand()/(RAND_MAX))*(arena_radius-area_radius);
+      pos = CVector2(rand_displacement_x*sin(rand_angle),
+                     rand_displacement_y*cos(rand_angle));
 
       bool duplicate = false;
-      for(const AreaALF& oth_area : oth_areas) {
-        duplicate = (duplicate || SquareDistance(oth_area.position,pos) < pow(area_radius,2));
-
-        //found a duplicate, nothing to do anymore
+      for(const AreaALF& an_area : oth_areas) {
+        duplicate = SquareDistance(an_area.position, pos) <= pow(area_radius*2,2);
         if(duplicate)
           break;
       }
-      // out of the previous loop without a duplicate
-      // new spot is valid
+
       if(!duplicate) {
-        areas.push_back(AreaALF(type, i, pos, area_radius));
+        AreaALF new_area(type, i, pos, area_radius);
+        oth_areas.push_back(new_area);
+        areas.push_back(new_area);
         break;
       }
+
       // too many tries and no valid spot
-      if(tries == 499) {
-        std::cout << "ERROR: too many tries and not an available spot for the area";
-        exit(-1);
+      if(tries == maxTries-1) {
+        std::cerr << "ERROR: too many tries and not an available spot for the area" << std::endl;
       }
     }
   }
 }
 
-bool ResourceALF::doStep(const std::vector<CVector2>& kilobot_positions, const std::vector<AreaALF>& oth_areas, const CVector3& arena_size) {
+bool ResourceALF::doStep(const std::vector<CVector2>& kilobot_positions, const std::vector<UInt8> kilobot_states, const std::vector<AreaALF>& oth_areas, const Real arena_radius) {
   // first update kilobots positions in the areas
-  for(CVector2 kb_pos : kilobot_positions) {
-    for(AreaALF& area : areas) {
-        if(SquareDistance(kb_pos, area.position) < pow(area_radius,2)) {
+  // compute only for those kilobots with the right state
+  for(UInt8 i=0; i<kilobot_positions.size(); ++i) {
+    if(kilobot_states.at(i) == this->type) {
+      for(AreaALF& area : areas) {
+        if(SquareDistance(kilobot_positions.at(i), area.position) < pow(area_radius,2)) {
           area.kilobots_in_area++;
           break;
         }
+      }
     }
   }
 
@@ -81,12 +85,13 @@ bool ResourceALF::doStep(const std::vector<CVector2>& kilobot_positions, const s
     }
   }
 
-  // update population
+  // update population expressed between 0 and 1
   population += population*eta*(1-(areas.size()/k));
+  // k is the DISCRETIZED environment carrying capacity
   discretized_population = ceil(population*k);
   // check how many areas we have to generate now
   UInt8 diff = ceil(discretized_population - areas.size());
-  generate(areas, arena_size, diff);
+  generate(areas, arena_radius, diff);
 
   return population < umin;
 }

@@ -14,9 +14,11 @@
 
 #include "distribution_functions.c"
 
-#define RESOURCES_SIZE 3
-#define USE_BUFFER
 
+#define RESOURCES_SIZE 1
+#define TEMPORAL_WINDOWS 5
+
+#define USE_BUFFER
 #ifdef USE_BUFFER
 #define BUFFER_SIZE 10
 #else
@@ -51,9 +53,9 @@ typedef enum {
 motion_t current_motion_type = FORWARD;
 
 /* counters for motion, turning and random_walk */
-const double std_motion_steps = 5*16; // TODO ask Vito what is this
+const double std_motion_steps = 5*16;
 u_int32_t levy_exponent = 1; // 2 is brownian like motion
-u_int32_t crw_exponent = 0.7; // go straight
+u_int32_t crw_exponent = 0.9; // go straight often
 u_int32_t turning_ticks = 0; // keep count of ticks of turning
 const u_int8_t max_turning_ticks = 80; /* constant to allow a maximum rotation of 180 degrees with \omega=\pi/5 */
 unsigned int straight_ticks = 0; // keep count of ticks of going straight
@@ -81,11 +83,12 @@ typedef enum {
 
 /* enum for keeping trace of internal kilobots decision related states */
 typedef enum {
-              NOT_COMMITTED=0,
-              COMMITTED_AREA_0=1,
+              NOT_COMMITTED=255,
+              COMMITTED_AREA_0=0,
+              COMMITTED_AREA_1=1,
               COMMITTED_AREA_2=2,
-              COMMITTED_AREA_3=3,
-              COMMITTED_AREA_4=4,
+              COMMITTED_AREA_3=4,
+              COMMITTED_AREA_4=5,
               COMMITTED_AREA_5=5,
               COMMITTED_AREA_6=6,
               COMMITTED_AREA_7=7,
@@ -100,9 +103,9 @@ bool internal_error = false;
 
 /* Variables for Smart Arena messages */
 u_int8_t sa_type = 0; // smart arena type (i.e. resource id)
+u_int8_t resources_hits[RESOURCES_SIZE][TEMPORAL_WINDOWS] = {0}; // number of hits in a given time window
 u_int8_t resources_populations[RESOURCES_SIZE] = {0}; // keep local knowledge about resources
 u_int8_t resources_umin[RESOURCES_SIZE] = {0}; // keep local knowledge about resources umin
-u_int8_t resources_k[RESOURCES_SIZE] = {0}; // keep local knowledge about resources umin
 
 /*-------------------------------------------------------------------*/
 /* Decision Making                                                   */
@@ -113,7 +116,7 @@ float k = 0.4;
 float h = 0.4;
 /* explore for a bit, estimate the pop and then take a decision */
 u_int32_t last_decision_tick = 0; /* when last decision was taken */
-u_int32_t exploration_ticks = 50; /* take a decision only after exploring the environment */
+u_int32_t exploration_ticks = 25; /* take a decision only after exploring the environment */
 
 /*-------------------------------------------------------------------*/
 /* Communication                                                     */
@@ -135,7 +138,7 @@ typedef struct compressed_messsage {
   u_int8_t resource_pop;   // estimated population of the current resource
 } compressed_messsage;
 compressed_messsage last_received_messages[BUFFER_SIZE];
-
+u_int8_t messages_count_per_window[TEMPORAL_WINDOWS];
 
 /*-------------------------------------------------------------------*/
 /* Function for setting the motor speed                              */
@@ -167,15 +170,41 @@ void set_motion(motion_t new_motion_type) {
 /* Merge received information about the population of the area on    */
 /* which the kb is on. Kilobots can only perceive locally and try to */
 /* estimate the population of a resource                             */
+/*                                                                   */
+/* we use the concept of time windows and compute the number of hits */
+/* in each of those. We then sum up all the hits at different times  */
+/* and scale those far beyond in time by an exponential time scale   */
+/* factor, giving more weight to those closer (in time).             */
 /*-------------------------------------------------------------------*/
-void merge_scan() {
-  if(current_arena_state != 255)
-    // TODO discuss with Vito about this!
-    // check for the other TODO around to fix this
+void merge_scan(bool time_window_is_over) {
+  // TODO questa non va bene perche' aumenta e basta la stima della popolazione,
+  // noi invece vogliamo anche abbassarla... e' un casino di merda per fare sta cosa
+  // valutare la possibilita' di passarla da sopra.
+  // altrimenti serve un modo per stabilire come far descrescere l'utilita'.
+  // Tipo "non la vedo come prima" oppure non so...
 
-    // this keep the number of areas seen around
-    // to be normalized over k
-    resources_populations[current_arena_state]++;
+  if(time_window_is_over) {
+    for(int i=0; i<RESOURCES_SIZE-1; ++i) {
+      // re-estimate population
+      u_int8_t estimated_pop = (resources_hits[i][0]/messages_count_per_window[0]); // *exp(TEMPORAL_WINDOWS/4);
+
+      for(int j=1; j<TEMPORAL_WINDOWS; ++j) {
+        // compute current time window estimation
+        estimated_pop += (resources_hits[i][j]/messages_count_per_window[j]); //*exp(TEMPORAL_WINDOWS-j/4);
+
+        // shift and reset temporal windows
+        resources_hits[i][j-1] = resources_hits[i][j];
+        resources_hits[i][j] = 0;
+      }
+
+      // update estimated population
+      resources_populations[i] = (estimated_pop*255)/TEMPORAL_WINDOWS;
+    }
+  } else {
+    // simply add the hit to the hits count
+    if(current_arena_state != 255)
+      resources_hits[current_arena_state][TEMPORAL_WINDOWS-1]++;
+  }
 }
 
 /*-------------------------------------------------------------------*/
@@ -204,9 +233,8 @@ void message_rx(message_t *msg, distance_measurement_t *d) {
     current_arena_state = (msg->data[1]); // get resource position
     if(current_arena_state != 255) {
       resources_umin[current_arena_state] = (msg->data[2]); // get umin for the resource
-      resources_k[current_arena_state] = (msg->data[3]); // get k for the resource
+      merge_scan(false);
     }
-    merge_scan();
 
     // UNCOMMENT IF NEEDED
     // get arena coordinates
@@ -255,7 +283,6 @@ message_t *message_tx() {
 /* successful transmission callback                                  */
 /*-------------------------------------------------------------------*/
 void message_tx_success() {
-  set_motors(0,0);
   sent_message = 1;
 }
 
@@ -274,10 +301,6 @@ void take_decision() {
     u_int16_t sum_committments = 0;
 
     for(int i=0; i<RESOURCES_SIZE; i++) {
-
-
-
-
       // TODO population
       if(resources_populations[i] > resources_umin[i]) {
         // normalize between 0 and 255 according to k
@@ -285,9 +308,6 @@ void take_decision() {
         sum_committments += processes[i];
       }
     }
-    // TODO non normalizzare
-    /* sum_committments /= RESOURCES_SIZE; // normalize */
-
 
     /****************************************************/
     /* recruitment over a random agent                  */
@@ -301,7 +321,6 @@ void take_decision() {
       // the agent sending it committed and
       // the population is above umin
 
-
       // TODO population
       if(kilo_ticks-recruitment_message.time_received < valid_until &&
          recruitment_message.resource_id != 255 &&
@@ -309,7 +328,6 @@ void take_decision() {
         processes[RESOURCES_SIZE] = recruitment_message.resource_pop*k;
       }
     }
-
 
     /****************************************************/
     /* extraction                                       */
@@ -415,7 +433,7 @@ void random_walk(){
     if (kilo_ticks > last_motion_ticks + straight_ticks) {
       /* perform a random turn */
       last_motion_ticks = kilo_ticks;
-      if (rand_soft() % 2) {
+      if (rand_hard() % 2) {
         set_motion(TURN_LEFT);
       } else {
         set_motion(TURN_RIGHT);
@@ -434,7 +452,7 @@ void random_walk(){
 
   case STOP:
   default:
-    set_motion(STOP);
+    set_motion(FORWARD);
   }
 }
 
@@ -443,8 +461,12 @@ void random_walk(){
 /* Init function                                                     */
 /*-------------------------------------------------------------------*/
 void setup() {
+  /* Initialise random seed */
+  uint8_t seed = rand_hard();
+  rand_seed(seed);
+  srand(seed);
   /* Initialise LED and motors */
-  set_color(RGB(0,0,0));
+  set_color(RGB(3,3,3));
   /* Initialise motion variables */
   set_motion(FORWARD);
 }
@@ -454,43 +476,45 @@ void setup() {
 /* Main loop                                                         */
 /*-------------------------------------------------------------------*/
 void loop() {
-  random_walk();
-  if(current_motion_type == STOP)
-    set_color(RGB(3,0,0));
-  else if (current_motion_type == FORWARD)
-    set_color(RGB(0,3,0));
-  else if (current_motion_type == TURN_RIGHT || current_motion_type == TURN_LEFT)
-    set_color(RGB(3,3,3));
-  return;
   // visual debug. Signal internal decision errors
   while(internal_error) {
-    set_color(RGB(0,1,0));
+    set_color(RGB(0,3,0));
     delay(500);
-    set_color(RGB(0,0,1));
+    set_color(RGB(0,0,3));
     delay(500);
   }
 
   /* take decision only after exploration */
   if(exploration_ticks <= kilo_ticks-last_decision_ticks) {
-    take_decision();
+    merge_scan(true);
+    // UNCOMMENT after
+    /* take_decision(); */
+    /*--------------------*/
     // reset last decision ticks
     last_decision_ticks = kilo_ticks;
   }
 
-  if(current_decision_state != NOT_COMMITTED) {
-    // turn on red led if status is committed
-    set_color(RGB(3,0,0));
-    // if over the wanted resource
-    if(current_decision_state == current_arena_state) {
-      // stop and exploit the area
-      set_motion(STOP);
-    } else {
-      random_walk(); // looking for the wanted resource
-    }
-  } else {
-    // simply continue as uncommitted and explore
-    random_walk();
-  }
+  // REMOVE after
+  random_walk();
+  // UNCOMMENT after
+  /* if(current_decision_state != NOT_COMMITTED) { */
+  /*   // if over the wanted resource */
+  /*   if(current_decision_state == current_arena_state) { */
+  /*     // turn or green led if status is committed and over the area */
+  /*     set_color(RGB(0,3,0)); */
+  /*     // stop and exploit the area */
+  /*     set_motion(STOP); */
+  /*   } else { */
+  /*     // turn on red led if status is committed but still loking for the area */
+  /*     set_color(RGB(3,0,0)); */
+  /*     random_walk(); // looking for the wanted resource */
+  /*   } */
+  /* } else { */
+  /*   // simply continue as uncommitted and explore */
+  /*   set_color(RGB(3,3,3)); */
+  /*   random_walk(); */
+  /* } */
+  /*--------------------*/
 
   /* fill up message type. Type 1 used for kbs */
   interactive_message.type = 1;
