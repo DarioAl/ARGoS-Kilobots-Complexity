@@ -8,7 +8,7 @@
         <system threads="8"/>
         <experiment length="1000"
         ticks_per_second="10"
-        random_seed="1234" />
+        random_seed="123" />
     </framework>
 
     <!-- *************** -->
@@ -18,12 +18,7 @@
 
         <kilobot_controller id="listener">
             <actuators>
-                <differential_steering implementation="default"
-                bias_avg="0.000"
-                bias_stddev="0.00"
-                factor_avg="1"
-                factor_stddev="0.00010"
-                />
+                <differential_steering implementation="default" />
                 <kilobot_led implementation="default" />
                 <kilobot_communication implementation="default" />
             </actuators>
@@ -64,9 +59,16 @@
             type="0"
             initial_population = "1"
             eta="1"
-            k="50"
+            k="25"
             umin="0.5">
           </resource>
+         <!-- <resource -->
+          <!--   type="1" -->
+          <!--   initial_population = "1" -->
+          <!--   eta="1" -->
+          <!--   k="25" -->
+          <!--   umin="0.5"> -->
+          <!-- </resource> -->
           <!-- <resource -->
           <!--   type="1" -->
           <!--   initial_population = "1" -->
@@ -88,7 +90,7 @@
         <distribute>
           <position method="uniform" min="-0.9,-0.9,0" max="0.9,0.9,0" />
             <orientation method="uniform" min="0,0,0" max="360,0,0" />
-            <entity quantity="100" max_trials="100">
+            <entity quantity="10" max_trials="100">
                 <kilobot id="kb">
                     <controller config="listener"/> <dynamics2d friction="0.7" />
                 </kilobot>
@@ -97,7 +99,7 @@
 
         <floor id="floor"
         source="loop_functions"
-        pixels_per_meter="180" />
+        pixels_per_meter="25" />
     </arena>
 
     <!-- ******************* -->

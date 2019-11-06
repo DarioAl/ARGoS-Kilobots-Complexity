@@ -17,7 +17,6 @@
 
 
 #define RESOURCES_SIZE 1
-#define TEMPORAL_WINDOWS 5
 
 #define USE_BUFFER
 #ifdef USE_BUFFER
@@ -175,27 +174,25 @@ void set_motion(motion_t new_motion_type) {
 /* estimate the population of a resource                             */
 /*-------------------------------------------------------------------*/
 void exponential_average(u_int8_t resource_id, u_int8_t resource_pop) {
-  float alpha = 0.9;
   // update by using exponential moving averagae to update estimated population
   // see https://en.wikipedia.org/wiki/Moving_average#Exponential_moving_average
-  resources_populations[resource_id] = alpha*(resource_pop)+(1-alpha)+resources_populations[resource_id];
+  if(resource_id != 255 && resource_id <= RESOURCES_SIZE) {
+    float alpha = 0.9;
+    resources_populations[resource_id] = (u_int8_t)alpha*(resource_pop)+(1-alpha)+resources_populations[resource_id];
+  }
 }
 
 void merge_scan(bool time_window_is_over) {
   if(time_window_is_over) {
-    for(u_int8_t i=0; i<RESOURCES_SIZE-1; ++i) {
+    for(u_int8_t i=0; i<RESOURCES_SIZE; i++) {
       // counts all other resoruces hits
       u_int8_t hits_otherResources = 0;
-      for(u_int8_t j=0; i<RESOURCES_SIZE-1; j++) {
+      for(u_int8_t j=0; j<RESOURCES_SIZE; j++) {
         if(i==j)
           continue;
         hits_otherResources += resources_hits[j];
       }
-      /*-------------------------------------------------------------------*/
-      /*            estimate population at current window                  */
-      /* the formula used to estimate the population is as follows:        */
       /* hits_i/(hits_i+hits_empty) * (1-(hits_otherResources/all_hits))   */
-      /*-------------------------------------------------------------------*/
       u_int8_t estimated_pop = resources_hits[i]/(messages_count-hits_otherResources+resources_hits[i]) * (1-(hits_otherResources/messages_count));
       // update by mean of exponential moving average
       exponential_average(i, estimated_pop);
@@ -283,7 +280,9 @@ void message_rx(message_t *msg, distance_measurement_t *d) {
     // now check for received utilities
     // and use these to update our perceived utilities
     exponential_average(msg->data[3], msg->data[4]);
-    exponential_average(msg->data[5], msg->data[6]);
+    if(RESOURCES_SIZE>1) {
+      exponential_average(msg->data[5], msg->data[6]);
+    }
 
     // UNCOMMENT IF NEEDED
     // get other kb coordinates
@@ -350,7 +349,6 @@ void take_decision() {
     /****************************************************/
     /* extraction                                       */
     /****************************************************/
-
     /* check if the sum of all processes is below 1 (here 255 since normalize to u_int_8) */
     /*                                  STOP                                              */
     if(sum_committments+processes[RESOURCES_SIZE] > 255) {
@@ -371,15 +369,11 @@ void take_decision() {
     }
   } else {
 
-
     /****************************************************/
     /* abandon                                          */
     /****************************************************/
-
     u_int8_t abandon = 0;
     /* leave immediately if reached the threshold */
-
-    // TODO population
     if(resources_populations[current_decision_state] <= resources_umin[current_decision_state]) {
       abandon = 255*k;
     }
@@ -407,7 +401,6 @@ void take_decision() {
     /****************************************************/
     /* extraction                                       */
     /****************************************************/
-
     /* check if the sum of all processes is below 1 (here 255 since normalize to u_int_8) */
     /*                                  STOP                                              */
     if(abandon+cross_inhibition > 255) {
@@ -465,7 +458,6 @@ void random_walk(){
     set_motion(FORWARD);
   }
 }
-
 
 /*-------------------------------------------------------------------*/
 /* Init function                                                     */
@@ -535,18 +527,27 @@ void loop() {
   interactive_message.data[2] = current_arena_state;
 
   /* if committed share your utility */
+  u_int8_t rand_resource_1, rand_resource_2;
   if(current_decision_state != 255) {
+    rand_resource_1 = current_decision_state; // this is set to avoid sharing same resources
     interactive_message.data[3] = resources_populations[current_decision_state];
     interactive_message.data[4] = resources_populations[current_decision_state];
   } else {
     /* share a random utility */
-    interactive_message.data[3] = rand_hard()*RESOURCES_SIZE;
+    rand_resource_1 = rand_hard()*RESOURCES_SIZE;
+    interactive_message.data[3] = rand_resource_1;
     interactive_message.data[4] = resources_populations[interactive_message.data[3]];
   }
   /* share also a second random other utility */
-  interactive_message.data[5] = rand_hard()*RESOURCES_SIZE;
-  interactive_message.data[6] = resources_populations[interactive_message.data[5]];
+  if(RESOURCES_SIZE>1) {
+    do {
+      rand_resource_2 = rand_hard()*RESOURCES_SIZE;
+    }
+    while(rand_resource_2 == current_decision_state && rand_resource_2 == rand_resource_1);
 
+    interactive_message.data[5] = rand_resource_2;
+    interactive_message.data[6] = resources_populations[interactive_message.data[5]];
+  }
   /* fill up the crc */
   interactive_message.crc = message_crc(&interactive_message);
 

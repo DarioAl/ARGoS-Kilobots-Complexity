@@ -1,6 +1,6 @@
 #include "resource.h"
 
-ResourceALF::ResourceALF(UInt8 type, TConfigurationNode& t_tree) : type(type), area_radius(0.04) {
+ResourceALF::ResourceALF(UInt8 type, TConfigurationNode& t_tree) : type(type), area_radius(0.03) {
   /* Get the virtual environments node from the .argos file */
   TConfigurationNode& tVirtualEnvironmentsNode = GetNode(t_tree, "environments");
   TConfigurationNodeIterator itNodes;

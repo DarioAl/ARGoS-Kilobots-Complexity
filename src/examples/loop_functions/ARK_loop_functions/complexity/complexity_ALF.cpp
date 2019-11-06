@@ -15,7 +15,7 @@ UInt8 hit_empty_space = 0; // number of empty hits since time_last_estimation
 
 CComplexityALF::CComplexityALF() :
   m_unDataAcquisitionFrequency(10),
-  circular_arena_radius(0.45),
+  circular_arena_radius(1),
   circular_arena_width(0.01),
   circular_arena_height(0.05),
   circular_arena_walls(50) {}
@@ -190,7 +190,6 @@ void CComplexityALF::UpdateKilobotStates(){
 /****************************************/
 
 void CComplexityALF::UpdateKilobotState(CKilobotEntity &c_kilobot_entity){
-
   // current kb id
   UInt16 unKilobotID = GetKilobotId(c_kilobot_entity);
   m_vecKilobotStates[unKilobotID] = 255;
@@ -255,20 +254,22 @@ void CComplexityALF::UpdateVirtualSensor(CKilobotEntity &c_kilobot_entity){
     // UInt16 ycord = (((UInt16)data[4] << 8) | data[5]);
 
 #ifdef DISTRIBUTION_ESTIMATION
-    if(m_fTimeInSeconds-time_last_estimation >= time_window_for_estimation) {
-      // store in the log file
-      m_cOutput << hit_resource << ", " << hit_empty_space << ", " << sent_messages << std::endl;
-      // update time_last_estimation
-      time_last_estimation = m_fTimeInSeconds;
-      // reset counters
-      hit_resource = 0;
-      hit_empty_space = 0;
-    } else {
-      sent_messages++;
-      if(m_vecKilobotStates[unKilobotID] != 255) {
-        hit_empty_space++;
+      if(unKilobotID == 0) {
+        if(m_fTimeInSeconds-time_last_estimation >= time_window_for_estimation) {
+        // store in the log file
+        m_cOutput << hit_resource << ", " << hit_empty_space << ", " << sent_messages << std::endl;
+        // update time_last_estimation
+        time_last_estimation = m_fTimeInSeconds;
+        // reset counters
+        hit_resource = 0;
+        hit_empty_space = 0;
       } else {
-        hit_resource++;
+        sent_messages++;
+        if(m_vecKilobotStates[unKilobotID] != 255) {
+          hit_empty_space++;
+        } else {
+          hit_resource++;
+        }
       }
     }
 #endif
