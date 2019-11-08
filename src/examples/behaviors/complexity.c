@@ -54,12 +54,12 @@ motion_t current_motion_type = FORWARD;
 
 /* counters for motion, turning and random_walk */
 const double std_motion_steps = 5*16;
-u_int32_t levy_exponent = 1; // 2 is brownian like motion
-u_int32_t crw_exponent = 0.9; // go straight often
-u_int32_t turning_ticks = 0; // keep count of ticks of turning
-const u_int8_t max_turning_ticks = 80; /* constant to allow a maximum rotation of 180 degrees with \omega=\pi/5 */
+const double levy_exponent = 1; // 2 is brownian like motion
+const double  crw_exponent = 0.1; // higher more straight
+uint32_t turning_ticks = 0; // keep count of ticks of turning
+const uint8_t max_turning_ticks = 80; /* constant to allow a maximum rotation of 180 degrees with \omega=\pi/5 */
 unsigned int straight_ticks = 0; // keep count of ticks of going straight
-const u_int16_t max_straight_ticks = 320;
+const uint16_t max_straight_ticks = 320;
 uint32_t last_motion_ticks = 0;
 
 /*-------------------------------------------------------------------*/
@@ -101,45 +101,47 @@ arena_t current_arena_state = OUTSIDE_AREA;
 decision_t current_decision_state = NOT_COMMITTED;
 bool internal_error = false;
 
+/* EMA alpha */
+const double stocazzo = 0.5;
 /* Variables for Smart Arena messages */
-u_int8_t sa_type = 0; // smart arena type (i.e. resource id)
-u_int8_t resources_hits[RESOURCES_SIZE] = {0}; // number of hits for each resource, to be compute by mean of an exp avg
-u_int8_t resources_populations[RESOURCES_SIZE] = {0}; // keep local knowledge about resources
-u_int8_t resources_umin[RESOURCES_SIZE] = {0}; // keep local knowledge about resources umin
+uint8_t sa_type = 0; // smart arena type (i.e. resource id)
+uint8_t resources_hits[RESOURCES_SIZE]; // number of hits for each resource, to be compute by mean of an exp avg
+uint8_t resources_pops[RESOURCES_SIZE]; // keep local knowledge about resources
+uint8_t resources_umin[RESOURCES_SIZE]; // keep local knowledge about resources umin
 
 /*-------------------------------------------------------------------*/
 /* Decision Making                                                   */
 /*-------------------------------------------------------------------*/
-u_int32_t last_decision_ticks = 0;
+uint32_t last_decision_ticks = 0;
 /* processes variables */
-float k = 0.4;
-float h = 0.4;
+const double k = 0.4;
+const double h = 0.4;
 /* explore for a bit, estimate the pop and then take a decision */
-u_int32_t last_decision_tick = 0; /* when last decision was taken */
-u_int32_t exploration_ticks = 25; /* take a decision only after exploring the environment */
+uint32_t last_decision_tick = 0; /* when last decision was taken */
+uint32_t exploration_ticks = 25; /* take a decision only after exploring the environment */
 
 /*-------------------------------------------------------------------*/
 /* Communication                                                     */
 /*-------------------------------------------------------------------*/
 /* flag for message sent */
-u_int8_t sent_message = 0;
+uint8_t sent_message = 0;
 
 /* current kb message out */
 message_t interactive_message;
 
 /* messages are valid for valid_util ticks */
-u_int8_t valid_until = 100;
+uint8_t valid_until = 100;
 
 /* buffer definitions storing information from other kbs */
-u_int8_t buffer_iterator = 255;
+uint8_t buffer_iterator = 255;
 typedef struct compressed_messsage {
-  u_int32_t time_received;   // time stamp
-  u_int8_t current_decision; // agent decision
-  u_int8_t resource_id;      // id of the current resource
-  u_int8_t resource_pop;     // estimated population of the current resource
+  uint32_t time_received;   // time stamp
+  uint8_t current_decision; // agent decision
+  uint8_t resource_id;      // id of the current resource
+  uint8_t resource_pop;     // estimated population of the current resource
 } compressed_messsage;
 compressed_messsage last_received_messages[BUFFER_SIZE];
-u_int8_t messages_count;
+uint8_t messages_count;
 
 /*-------------------------------------------------------------------*/
 /* Function for setting the motor speed                              */
@@ -173,36 +175,40 @@ void set_motion(motion_t new_motion_type) {
 /* which the kb is on. Kilobots can only perceive locally and try to */
 /* estimate the population of a resource                             */
 /*-------------------------------------------------------------------*/
-void exponential_average(u_int8_t resource_id, u_int8_t resource_pop) {
+void exponential_average(uint8_t resource_id, uint8_t resource_pop) {
   // update by using exponential moving averagae to update estimated population
-  // see https://en.wikipedia.org/wiki/Moving_average#Exponential_moving_average
-  if(resource_id != 255 && resource_id <= RESOURCES_SIZE) {
-    float alpha = 0.9;
-    resources_populations[resource_id] = (u_int8_t)alpha*(resource_pop)+(1-alpha)+resources_populations[resource_id];
-  }
+  /* https://stackoverflow.com/questions/37300684/implementing-exponential-moving-average-in-c */
+  resources_pops[resource_id] = (uint8_t)(resources_pops[resource_id])*stocazzo+(1-stocazzo)*resource_pop;
 }
 
 void merge_scan(bool time_window_is_over) {
-  if(time_window_is_over) {
-    for(u_int8_t i=0; i<RESOURCES_SIZE; i++) {
+  if(time_window_is_over && messages_count>0) {
+    for(uint8_t i=0; i<RESOURCES_SIZE; i++) {
       // counts all other resoruces hits
-      u_int8_t hits_otherResources = 0;
-      for(u_int8_t j=0; j<RESOURCES_SIZE; j++) {
-        if(i==j)
-          continue;
-        hits_otherResources += resources_hits[j];
+      uint8_t hits_otherResources = 0;
+      for(uint8_t j=0; j<RESOURCES_SIZE; j++) {
+        if(i!=j)
+          hits_otherResources += resources_hits[j];
       }
       /* hits_i/(hits_i+hits_empty) * (1-(hits_otherResources/all_hits))   */
-      u_int8_t estimated_pop = resources_hits[i]/(messages_count-hits_otherResources+resources_hits[i]) * (1-(hits_otherResources/messages_count));
+      uint8_t estimated_pop = 255;
+      if(hits_otherResources+resources_hits[i] != messages_count) {
+        // avoid 0 division
+        estimated_pop = 255*(1-(resources_hits[i]/(messages_count-hits_otherResources+resources_hits[i]) * (1-(hits_otherResources/messages_count))));
+      }
       // update by mean of exponential moving average
       exponential_average(i, estimated_pop);
     }
     // reset hits counts
     memset(resources_hits, 0, sizeof(resources_hits));
+    // reset message count
+    messages_count = 0;
   } else {
-    // simply add the hit to the hits count
-    if(current_arena_state != 255)
+    // simply add the hit to the hits count and keep count of messages
+    if(current_arena_state != 255) {
       resources_hits[current_arena_state]++;
+      messages_count++;
+    }
   }
 }
 
@@ -220,7 +226,7 @@ void merge_scan(bool time_window_is_over) {
 
 void message_rx(message_t *msg, distance_measurement_t *d) {
   /* get id (always firt byte) */
-  u_int8_t id = msg->data[0];
+  uint8_t id = msg->data[0];
 
   if(msg->type==0 && id==kilo_uid) {
     /* ----------------------------------*/
@@ -260,7 +266,7 @@ void message_rx(message_t *msg, distance_measurement_t *d) {
 
     // store the message in the buffer
     if(buffer_iterator == 255) {
-      for(u_int8_t i=0; i<BUFFER_SIZE; i++) {
+      for(uint8_t i=0; i<BUFFER_SIZE; i++) {
         // trick to avoid accessing bad data at the very beginning
         // this will be filled very soon with good data anyway
         last_received_messages[1] = c_message;
@@ -313,17 +319,17 @@ void message_tx_success() {
 void take_decision() {
   /* Start decision process */
   if(current_decision_state == NOT_COMMITTED) {
-    u_int8_t processes[RESOURCES_SIZE+1] = {0}; // store here all committment processes
+    uint8_t processes[RESOURCES_SIZE+1] = {0}; // store here all committment processes
 
     /****************************************************/
     /* spontaneous commitment process through discovery */
     /****************************************************/
-    u_int16_t sum_committments = 0;
+    uint16_t sum_committments = 0;
 
     for(int i=0; i<RESOURCES_SIZE; i++) {
-      if(resources_populations[i] > resources_umin[i]) {
+      if(resources_pops[i] > resources_umin[i]) {
         // normalize between 0 and 255 according to k
-        processes[i] = resources_populations[i]*h;
+        processes[i] = resources_pops[i]*h;
         sum_committments += processes[i];
       }
     }
@@ -333,7 +339,7 @@ void take_decision() {
     /****************************************************/
     compressed_messsage recruitment_message = last_received_messages[0];
     if(buffer_iterator != 255) {
-      u_int8_t index = rand_hard()*BUFFER_SIZE;
+      uint8_t index = rand_hard()*BUFFER_SIZE;
       recruitment_message = last_received_messages[index];
       // if the message is valid and
       // the agent sending it committed and
@@ -349,14 +355,14 @@ void take_decision() {
     /****************************************************/
     /* extraction                                       */
     /****************************************************/
-    /* check if the sum of all processes is below 1 (here 255 since normalize to u_int_8) */
+    /* check if the sum of all processes is below 1 (here 255 since normalize to uint_8) */
     /*                                  STOP                                              */
     if(sum_committments+processes[RESOURCES_SIZE] > 255) {
       internal_error = true;
       return;
     }
 
-    u_int8_t extraction = rand_hard(); // a random number to extract next decision
+    uint8_t extraction = rand_hard(); // a random number to extract next decision
     for(int i=0; i<RESOURCES_SIZE; i++) {
       extraction -= processes[i];
       if(extraction <= 0) {
@@ -372,9 +378,9 @@ void take_decision() {
     /****************************************************/
     /* abandon                                          */
     /****************************************************/
-    u_int8_t abandon = 0;
+    uint8_t abandon = 0;
     /* leave immediately if reached the threshold */
-    if(resources_populations[current_decision_state] <= resources_umin[current_decision_state]) {
+    if(resources_pops[current_decision_state] <= resources_umin[current_decision_state]) {
       abandon = 255*k;
     }
 
@@ -382,10 +388,10 @@ void take_decision() {
     /* cross inhibtion over a random agent              */
     /****************************************************/
 
-    u_int8_t cross_inhibition = 0;
+    uint8_t cross_inhibition = 0;
     compressed_messsage cross_message;
     if(buffer_iterator != 255) { // FIXME this only check for the first message
-      u_int8_t index = rand_hard()*BUFFER_SIZE;
+      uint8_t index = rand_hard()*BUFFER_SIZE;
       cross_message = last_received_messages[index];
       // if the message is valid and
       // the agent sending it committed and
@@ -401,14 +407,14 @@ void take_decision() {
     /****************************************************/
     /* extraction                                       */
     /****************************************************/
-    /* check if the sum of all processes is below 1 (here 255 since normalize to u_int_8) */
+    /* check if the sum of all processes is below 1 (here 255 since normalize to uint_8) */
     /*                                  STOP                                              */
     if(abandon+cross_inhibition > 255) {
       internal_error = true;
       return;
     }
 
-    u_int8_t extraction = rand_hard(); // a random number to extract next decision
+    uint8_t extraction = rand_hard(); // a random number to extract next decision
     extraction -= (abandon+cross_inhibition);
     if(extraction <= 0) {
       current_decision_state = NOT_COMMITTED;
@@ -471,6 +477,11 @@ void setup() {
   set_color(RGB(3,3,3));
   /* Initialise motion variables */
   set_motion(FORWARD);
+  for(uint8_t i; i<RESOURCES_SIZE; i++) {
+    resources_hits[i] = 0;
+    resources_pops[i] = 125;
+    resources_umin[i] = 0;
+  }
 }
 
 
@@ -494,7 +505,7 @@ void loop() {
     /*--------------------*/
     // reset last decision ticks
     last_decision_ticks = kilo_ticks;
-  }
+    }
 
   // REMOVE after
   random_walk();
@@ -527,16 +538,16 @@ void loop() {
   interactive_message.data[2] = current_arena_state;
 
   /* if committed share your utility */
-  u_int8_t rand_resource_1, rand_resource_2;
+  uint8_t rand_resource_1, rand_resource_2;
   if(current_decision_state != 255) {
     rand_resource_1 = current_decision_state; // this is set to avoid sharing same resources
-    interactive_message.data[3] = resources_populations[current_decision_state];
-    interactive_message.data[4] = resources_populations[current_decision_state];
+    interactive_message.data[3] = resources_pops[current_decision_state];
+    interactive_message.data[4] = resources_pops[current_decision_state];
   } else {
     /* share a random utility */
     rand_resource_1 = rand_hard()*RESOURCES_SIZE;
     interactive_message.data[3] = rand_resource_1;
-    interactive_message.data[4] = resources_populations[interactive_message.data[3]];
+    interactive_message.data[4] = resources_pops[rand_resource_1];
   }
   /* share also a second random other utility */
   if(RESOURCES_SIZE>1) {
@@ -546,7 +557,8 @@ void loop() {
     while(rand_resource_2 == current_decision_state && rand_resource_2 == rand_resource_1);
 
     interactive_message.data[5] = rand_resource_2;
-    interactive_message.data[6] = resources_populations[interactive_message.data[5]];
+    interactive_message.data[6] = resources_pops[rand_resource_2];
+    resources_pops[0] = 1;
   }
   /* fill up the crc */
   interactive_message.crc = message_crc(&interactive_message);

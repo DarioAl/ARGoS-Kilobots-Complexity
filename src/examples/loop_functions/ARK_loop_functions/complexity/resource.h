@@ -42,6 +42,11 @@ class ResourceALF {
   Real k; /* maximum population for single area */
   Real umin; /* population threshold @see doStep */
 
+  /************************************/
+  /* area exploitation function       */
+  /************************************/
+  std::string exploitation; /* single area exploitation */
+
   /* constructor */
   inline ResourceALF() {
     type = 0;

@@ -8,6 +8,7 @@ UInt8 time_window_for_estimation = 20; // how long an estimation is
 Real sent_messages = 0; // number of messages sent time_last_estimation
 UInt8 hit_resource = 0; // number of hits since time_last_estimation
 UInt8 hit_empty_space = 0; // number of empty hits since time_last_estimation
+UInt8 estimated_by_kb = 125; // exponential average as done in the kb
 #endif
 
 /****************************************/
@@ -254,21 +255,32 @@ void CComplexityALF::UpdateVirtualSensor(CKilobotEntity &c_kilobot_entity){
     // UInt16 ycord = (((UInt16)data[4] << 8) | data[5]);
 
 #ifdef DISTRIBUTION_ESTIMATION
-      if(unKilobotID == 0) {
-        if(m_fTimeInSeconds-time_last_estimation >= time_window_for_estimation) {
+    if(unKilobotID == 0) {
+      if(m_fTimeInSeconds-time_last_estimation >= time_window_for_estimation) {
         // store in the log file
-        m_cOutput << hit_resource << ", " << hit_empty_space << ", " << sent_messages << std::endl;
         // update time_last_estimation
         time_last_estimation = m_fTimeInSeconds;
+        // estimate
+        double alpha_ema = 0.5;
+        // TODO only for one resoruce now
+        uint8_t kb_pop = 255;
+        if(hit_resource < 19)
+          kb_pop = 255*hit_resource/(19);
+        estimated_by_kb = estimated_by_kb*alpha_ema + (1-alpha_ema)*kb_pop;
+        // std::cout << hit_resource << std::endl;
+        // std::cout << estimated_by_kb << std::endl;
+        // std::cout << " -------------- " << std::endl;
+        m_cOutput << hit_empty_space << ", " << hit_resource << ", " << estimated_by_kb << "," << sent_messages << std::endl;
         // reset counters
         hit_resource = 0;
         hit_empty_space = 0;
+        sent_messages = 0;
       } else {
         sent_messages++;
         if(m_vecKilobotStates[unKilobotID] != 255) {
-          hit_empty_space++;
-        } else {
           hit_resource++;
+        } else {
+          hit_empty_space++;
         }
       }
     }

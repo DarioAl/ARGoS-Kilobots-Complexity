@@ -8,7 +8,7 @@
         <system threads="8"/>
         <experiment length="1000"
         ticks_per_second="10"
-        random_seed="123" />
+        random_seed="1" />
     </framework>
 
     <!-- *************** -->
@@ -59,8 +59,9 @@
             type="0"
             initial_population = "1"
             eta="1"
-            k="25"
-            umin="0.5">
+            k="250"
+            umin="0.5"
+            exploitation="linear">
           </resource>
          <!-- <resource -->
           <!--   type="1" -->
@@ -90,7 +91,7 @@
         <distribute>
           <position method="uniform" min="-0.9,-0.9,0" max="0.9,0.9,0" />
             <orientation method="uniform" min="0,0,0" max="360,0,0" />
-            <entity quantity="10" max_trials="100">
+            <entity quantity="50" max_trials="100">
                 <kilobot id="kb">
                     <controller config="listener"/> <dynamics2d friction="0.7" />
                 </kilobot>

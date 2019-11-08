@@ -5,8 +5,8 @@
     <!-- * General configuration * -->
     <!-- ************************* -->
     <framework>
-        <system threads="8" />
-        <experiment length="500"
+        <system threads="6" />
+        <experiment length="1200"
         ticks_per_second="10"
         random_seed="__SEED__" />
     </framework>
@@ -67,13 +67,13 @@
             k="__AREAS__"
             umin="0.5">
           </resource>
-          <resource
-            type="1"
-            initial_population = "1"
-            eta="1"
-            k="__AREAS__"
-            umin="0.5">
-          </resource>
+          <!-- <resource -->
+          <!--   type="1" -->
+          <!--   initial_population = "1" -->
+          <!--   eta="1" -->
+          <!--   k="__AREAS__" -->
+          <!--   umin="0.5"> -->
+          <!-- </resource> -->
        </environments>
     </loop_functions>
 
@@ -81,7 +81,7 @@
         <distribute>
           <position method="uniform" min="-0.9,-0.9,0" max="0.9,0.9,0" />
             <orientation method="uniform" min="0,0,0" max="360,0,0" />
-            <entity quantity="10" max_trials="100">
+            <entity quantity="__KBS__" max_trials="100">
                 <kilobot id="kb">
                     <controller config="listener"/> <dynamics2d friction="0.7" />
                 </kilobot>

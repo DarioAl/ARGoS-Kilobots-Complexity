@@ -1,6 +1,6 @@
 #include "resource.h"
 
-ResourceALF::ResourceALF(UInt8 type, TConfigurationNode& t_tree) : type(type), area_radius(0.03) {
+ResourceALF::ResourceALF(UInt8 type, TConfigurationNode& t_tree) : type(type), area_radius(0.04) {
   /* Get the virtual environments node from the .argos file */
   TConfigurationNode& tVirtualEnvironmentsNode = GetNode(t_tree, "environments");
   TConfigurationNodeIterator itNodes;
@@ -17,6 +17,7 @@ ResourceALF::ResourceALF(UInt8 type, TConfigurationNode& t_tree) : type(type), a
       GetNodeAttribute(*itNodes, "k", this->k  );
       GetNodeAttribute(*itNodes, "eta", this->eta);
       GetNodeAttribute(*itNodes, "umin", this->umin);
+      GetNodeAttribute(*itNodes, "linear", this->exploitation);
       // areas of the resource
       this->areas.reserve(k);
       // compute discretized population (it is usefull to have population between 0 and 1)
@@ -28,7 +29,7 @@ ResourceALF::ResourceALF(UInt8 type, TConfigurationNode& t_tree) : type(type), a
 void ResourceALF::generate(std::vector<AreaALF>& oth_areas, const Real arena_radius, uint num_of_areas) {
   CVector2 pos;
   UInt16 tries = 0; // placement tries
-  UInt16 maxTries = 999; // max placement tries
+  UInt16 maxTries = 9999; // max placement tries
 
   for(UInt32 i=0; i<num_of_areas; ++i) {
     for(tries = 0; tries <= maxTries; tries++) {
@@ -46,15 +47,16 @@ void ResourceALF::generate(std::vector<AreaALF>& oth_areas, const Real arena_rad
       }
 
       if(!duplicate) {
-        AreaALF new_area(type, i, pos, area_radius);
+        AreaALF new_area(type, i, pos, area_radius, exploitation);
         oth_areas.push_back(new_area);
         areas.push_back(new_area);
         break;
       }
 
       // too many tries and no valid spot
-      if(tries == maxTries-1) {
+      if(tries >= maxTries-1) {
         std::cerr << "ERROR: too many tries and not an available spot for the area" << std::endl;
+        exit(-1);
       }
     }
   }
