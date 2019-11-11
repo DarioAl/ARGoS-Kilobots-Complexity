@@ -32,15 +32,14 @@ class ResourceALF {
   UInt8 type; // resource type REDAREA or GREENAREA
   Real area_radius;   // the radius of the circle
   std::vector<AreaALF> areas; /* areas of the resource */
-  Real population; /* Total resource population */
-  UInt8 discretized_population; /* Total number of areas from population */
+  Real population; /* Total resource population from0 to k*/
 
   /************************************/
   /* logistic growth                  */
   /************************************/
   Real eta; /* growht factor */
   Real k; /* maximum population for single area */
-  Real umin; /* population threshold @see doStep */
+  Real umin; /* population threshold in percentange @see doStep */
 
   /************************************/
   /* area exploitation function       */

@@ -136,12 +136,12 @@ void CComplexityALF::SetupVirtualEnvironments(TConfigurationNode& t_tree){
     GetNodeAttribute(*itNodes, "type", tType);
     ResourceALF resource(tType, t_tree);
     resources.push_back(resource);
-    areas.insert(std::end(areas), std::begin(resource.areas), std::end(resource.areas));
   }
 
   std::vector<CVector2> area_positions;
   for(ResourceALF& resource : resources) {
-    resource.generate(areas, circular_arena_radius, resource.discretized_population);
+    resource.generate(areas, circular_arena_radius, resource.population);
+    areas.insert(std::end(areas), std::begin(resource.areas), std::end(resource.areas));
   }
 }
 

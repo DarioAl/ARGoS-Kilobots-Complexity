@@ -20,8 +20,6 @@ ResourceALF::ResourceALF(UInt8 type, TConfigurationNode& t_tree) : type(type), a
       GetNodeAttribute(*itNodes, "exploitation", this->exploitation);
       // areas of the resource
       this->areas.reserve(k);
-      // compute discretized population (it is usefull to have population between 0 and 1)
-      this->discretized_population = this->population * this->k;
     }
   }
 }
@@ -88,29 +86,29 @@ bool ResourceALF::doStep(const std::vector<CVector2>& kilobot_positions, const s
   while(it != areas.end()) {
     if(it->doStep()) {
       it = areas.erase(it);
+      population = areas.size();
+      std::cout << " DELETED " << std::endl;
     } else {
       // increment iterator
       ++it;
     }
   }
 
-  // recompute current normalize population after deletion
-  // remember that k is the maximumn discretized number of areas
-  population = areas.size()/k;
-
-  /* apply growth */
+// recompute current normalize population after deletion
+/* apply growth */
   // the logistic growth up bound for the population here is omitted and is 1
-  population += (population)*eta*(1-population);
-  // k is the DISCRETIZED environment carrying capacity
-  discretized_population =round(population*k);
+  std::cout << "population before is " << population << std::endl;
+  population += (population)*eta*(1-population/k);
+  std::cout << "population after is " << population << std::endl;
+  std::cout << "--------------------------" << std::endl;
 
   /* regenerate area */
   // check how many areas we have to generate now
-  UInt8 diff = discretized_population - areas.size();
-  this->generate(oth_areas, arena_radius, diff);
-  // recompute current normalize population after generation
-  // remember that k is the maximumn discretized number of areas
-  population = areas.size()/k;
+  UInt8 diff = floor(population) - areas.size();
+  if(diff>0) {
+    this->generate(oth_areas, arena_radius, diff);
+  }
 
-  return population < umin;
+  // umin is expressed in percentage
+  return population < population*umin;
 }
