@@ -65,7 +65,7 @@ class ResourceALF {
   /*
    * generate areas for the resource by taking into account all other areas positions
    */
-  void generate(std::vector<AreaALF>& oth_areas, const Real arena_size, uint num_of_areas);
+  void generate(const std::vector<AreaALF>& oth_areas, const Real arena_size, uint num_of_areas);
 
   /*
    * do one simulation step during which:

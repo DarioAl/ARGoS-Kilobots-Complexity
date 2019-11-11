@@ -54,7 +54,7 @@ motion_t current_motion_type = FORWARD;
 
 /* counters for motion, turning and random_walk */
 const double std_motion_steps = 5*16;
-const double levy_exponent = 1; // 2 is brownian like motion
+const double levy_exponent = 2; // 2 is brownian like motion
 const double  crw_exponent = 0.1; // higher more straight
 uint32_t turning_ticks = 0; // keep count of ticks of turning
 const uint8_t max_turning_ticks = 80; /* constant to allow a maximum rotation of 180 degrees with \omega=\pi/5 */
@@ -508,7 +508,13 @@ void loop() {
     }
 
   // REMOVE after
-  random_walk();
+  current_decision_state == COMMITTED_AREA_0;
+  if(current_arena_state == INSIDE_AREA_0) {
+    set_color(RGB(0,3,0));
+    set_motion(STOP);
+  } else {
+    random_walk();
+  }
   // UNCOMMENT after
   /* if(current_decision_state != NOT_COMMITTED) { */
   /*   // if over the wanted resource */

@@ -65,7 +65,8 @@
             initial_population = "1"
             eta="1"
             k="__AREAS__"
-            umin="0.5">
+            umin="0.5"
+            exploitation="exploitation">
           </resource>
           <!-- <resource -->
           <!--   type="1" -->

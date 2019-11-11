@@ -176,7 +176,8 @@ void CComplexityALF::UpdateVirtualEnvironments() {
 
 void CComplexityALF::UpdateKilobotStates(){
   // resets kbs states and positions
-  this->m_vecKilobotStates.clear();
+  // TODO Check this one
+  // this->m_vecKilobotStates.clear();
   this->m_vecKilobotsPositions.clear();
 
   for(UInt16 it=0;it< m_tKilobotEntities.size();it++){
@@ -267,10 +268,13 @@ void CComplexityALF::UpdateVirtualSensor(CKilobotEntity &c_kilobot_entity){
         if(hit_resource < 19)
           kb_pop = 255*hit_resource/(19);
         estimated_by_kb = estimated_by_kb*alpha_ema + (1-alpha_ema)*kb_pop;
-        // std::cout << hit_resource << std::endl;
-        // std::cout << estimated_by_kb << std::endl;
-        // std::cout << " -------------- " << std::endl;
-        m_cOutput << hit_empty_space << ", " << hit_resource << ", " << estimated_by_kb << "," << sent_messages << std::endl;
+        float actual_ut = resources.at(0).population;
+        std::cout << actual_ut << std::endl;
+        m_cOutput << hit_empty_space << ", "
+                  << hit_resource << ", "
+                  << estimated_by_kb << ", "
+                  << actual_ut << ", "
+                  << sent_messages << std::endl;
         // reset counters
         hit_resource = 0;
         hit_empty_space = 0;

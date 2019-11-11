@@ -17,7 +17,7 @@ ResourceALF::ResourceALF(UInt8 type, TConfigurationNode& t_tree) : type(type), a
       GetNodeAttribute(*itNodes, "k", this->k  );
       GetNodeAttribute(*itNodes, "eta", this->eta);
       GetNodeAttribute(*itNodes, "umin", this->umin);
-      GetNodeAttribute(*itNodes, "linear", this->exploitation);
+      GetNodeAttribute(*itNodes, "exploitation", this->exploitation);
       // areas of the resource
       this->areas.reserve(k);
       // compute discretized population (it is usefull to have population between 0 and 1)
@@ -26,7 +26,13 @@ ResourceALF::ResourceALF(UInt8 type, TConfigurationNode& t_tree) : type(type), a
   }
 }
 
-void ResourceALF::generate(std::vector<AreaALF>& oth_areas, const Real arena_radius, uint num_of_areas) {
+void ResourceALF::generate(const std::vector<AreaALF>& oth_areas, const Real arena_radius, uint num_of_areas) {
+  // concatenate oth_areas and this->areas to avoid placing a new area on
+  // the same spot
+  std::vector<AreaALF> all_areas;
+  all_areas.insert(all_areas.end(), oth_areas.begin(), oth_areas.end());
+  all_areas.insert(all_areas.end(), areas.begin(), areas.end());
+
   CVector2 pos;
   UInt16 tries = 0; // placement tries
   UInt16 maxTries = 9999; // max placement tries
@@ -34,13 +40,13 @@ void ResourceALF::generate(std::vector<AreaALF>& oth_areas, const Real arena_rad
   for(UInt32 i=0; i<num_of_areas; ++i) {
     for(tries = 0; tries <= maxTries; tries++) {
       Real rand_angle = ((Real) rand()/(RAND_MAX))*2*CRadians::PI.GetValue();
-      Real rand_displacement_x = ((Real) rand()/(RAND_MAX))*(arena_radius-area_radius);
-      Real rand_displacement_y = ((Real) rand()/(RAND_MAX))*(arena_radius-area_radius);
-      pos = CVector2(rand_displacement_x*sin(rand_angle),
-                     rand_displacement_y*cos(rand_angle));
+      Real rand_displacement_x = ((Real) rand()/(RAND_MAX))*(arena_radius);
+      Real rand_displacement_y = ((Real) rand()/(RAND_MAX))*(arena_radius);
+      pos = CVector2(rand_displacement_x*cos(rand_angle),
+                     rand_displacement_y*sin(rand_angle));
 
       bool duplicate = false;
-      for(const AreaALF& an_area : oth_areas) {
+      for(const AreaALF& an_area : all_areas) {
         duplicate = SquareDistance(an_area.position, pos) <= pow(area_radius*2,2);
         if(duplicate)
           break;
@@ -48,7 +54,7 @@ void ResourceALF::generate(std::vector<AreaALF>& oth_areas, const Real arena_rad
 
       if(!duplicate) {
         AreaALF new_area(type, i, pos, area_radius, exploitation);
-        oth_areas.push_back(new_area);
+        // add to the current areas
         areas.push_back(new_area);
         break;
       }
@@ -76,6 +82,7 @@ bool ResourceALF::doStep(const std::vector<CVector2>& kilobot_positions, const s
     }
   }
 
+  /* apply exploitation */
   // now call the doStep for every area and remove from the vector if pop is 0
   std::vector<AreaALF>::iterator it = areas.begin();
   while(it != areas.end()) {
@@ -87,13 +94,23 @@ bool ResourceALF::doStep(const std::vector<CVector2>& kilobot_positions, const s
     }
   }
 
-  // update population expressed between 0 and 1
-  population += population*eta*(1-(areas.size()/k));
+  // recompute current normalize population after deletion
+  // remember that k is the maximumn discretized number of areas
+  population = areas.size()/k;
+
+  /* apply growth */
+  // the logistic growth up bound for the population here is omitted and is 1
+  population += (population)*eta*(1-population);
   // k is the DISCRETIZED environment carrying capacity
-  discretized_population = ceil(population*k);
+  discretized_population =round(population*k);
+
+  /* regenerate area */
   // check how many areas we have to generate now
-  UInt8 diff = ceil(discretized_population - areas.size());
-  generate(areas, arena_radius, diff);
+  UInt8 diff = discretized_population - areas.size();
+  this->generate(oth_areas, arena_radius, diff);
+  // recompute current normalize population after generation
+  // remember that k is the maximumn discretized number of areas
+  population = areas.size()/k;
 
   return population < umin;
 }
