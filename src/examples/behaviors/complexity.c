@@ -505,14 +505,15 @@ void loop() {
     /*--------------------*/
     // reset last decision ticks
     last_decision_ticks = kilo_ticks;
-    }
+  }
 
   // REMOVE after
-  current_decision_state == COMMITTED_AREA_0;
+  /* current_decision_state == COMMITTED_AREA_0; */
   if(current_arena_state == INSIDE_AREA_0) {
     set_color(RGB(0,3,0));
     set_motion(STOP);
   } else {
+    set_color(RGB(3,3,3));
     random_walk();
   }
   // UNCOMMENT after

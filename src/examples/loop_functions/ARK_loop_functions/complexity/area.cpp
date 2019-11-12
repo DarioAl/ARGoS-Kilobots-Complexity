@@ -12,7 +12,7 @@ AreaALF::AreaALF(UInt8 type, UInt8 id, const CVector2& position, Real radius, st
 /* Decrease population according to the number of the kbs on the area */
 bool AreaALF::doStep() {
   if(exploitation_type == "quadratic") {
-    this->population -= pow(kilobots_in_area,2);
+   this->population -= pow(kilobots_in_area,2);
   } else if(exploitation_type == "cubic") {
     this->population -= pow(kilobots_in_area,3);
   } else {

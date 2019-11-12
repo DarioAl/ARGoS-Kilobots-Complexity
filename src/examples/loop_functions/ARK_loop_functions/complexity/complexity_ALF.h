@@ -120,6 +120,12 @@ private:
    */
   std::vector<UInt8> m_vecKilobotStates;
 
+  /*
+   * used to store the led color of each kilobot
+   * used to signel that the kb is working in place
+   */
+  std::vector<CColor> m_vecKilobotColors;
+
   /* used to store the position of each committed kilobot in each resource */
   /* green light means the kb is committed and working in position         */
   /* red light means the kb is committed but still looking for a spot      */

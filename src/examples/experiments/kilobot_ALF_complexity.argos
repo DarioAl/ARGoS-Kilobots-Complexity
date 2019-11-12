@@ -57,41 +57,28 @@
           <!-- umin is the lower population threshold     -->
           <resource
             type="0"
-            initial_population = "125"
-            eta="0.05"
+            initial_population = "15"
+            eta="0.005"
             k="125"
             umin="0.5"
             exploitation="linear">
           </resource>
          <!-- <resource -->
-          <!--   type="1" -->
-          <!--   initial_population = "1" -->
-          <!--   eta="1" -->
-          <!--   k="25" -->
-          <!--   umin="0.5"> -->
-          <!-- </resource> -->
-          <!-- <resource -->
-          <!--   type="1" -->
-          <!--   initial_population = "1" -->
-          <!--   eta="0.0001" -->
-          <!--   k="50" -->
-          <!--   umin="10"> -->
-          <!-- </resource> -->
-          <!-- <resource -->
-          <!--   type="2" -->
-          <!--   initial_population = "1" -->
-          <!--   eta="0.0001" -->
-          <!--   k="50" -->
-          <!--   umin="10"> -->
-          <!-- </resource> -->
+         <!--    type="1" -->
+         <!--    initial_population = "15" -->
+         <!--    eta="0.005" -->
+         <!--    k="125" -->
+         <!--    umin="0.5" -->
+         <!--    exploitation="linear"> -->
+         <!--  </resource> -->
        </environments>
     </loop_functions>
 
     <arena size="2.5, 2.5, 1" center="0,0,0.5">
         <distribute>
-          <position method="uniform" min="-0.9,-0.9,0" max="0.9,0.9,0" />
+          <position method="uniform" min="-0.95,-0.95,0" max="0.95,0.95,0" />
             <orientation method="uniform" min="0,0,0" max="360,0,0" />
-            <entity quantity="1" max_trials="100">
+            <entity quantity="12" max_trials="100">
                 <kilobot id="kb">
                     <controller config="listener"/> <dynamics2d friction="0.7" />
                 </kilobot>
@@ -100,7 +87,7 @@
 
         <floor id="floor"
         source="loop_functions"
-        pixels_per_meter="20" />
+        pixels_per_meter="120" />
     </arena>
 
     <!-- ******************* -->
@@ -137,6 +124,8 @@
                 <placement idx="9" position="-0.0229259,-0.177184,0.0725521" look_at="-0.0273839,-0.812385,0.0624333" lens_focal_length="20" />
                 <placement idx="10" position="-0.0229259,-0.177184,0.0725521" look_at="-0.0273839,0.812385,0.0624333" lens_focal_length="20" />
             </camera>
+            <!-- <user_functions library="build/examples/loop_functions/id_loop_functions/libid_loop_functions" -->
+            <!-- label="id_qtuser_functions" /> -->
         </qt-opengl>
     </visualization>
 

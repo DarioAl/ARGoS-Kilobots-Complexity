@@ -31,6 +31,7 @@ class ResourceALF {
   /************************************/
   UInt8 type; // resource type REDAREA or GREENAREA
   Real area_radius;   // the radius of the circle
+  UInt64 seq_areas_id; // used to sequentially assign ids to areas
   std::vector<AreaALF> areas; /* areas of the resource */
   Real population; /* Total resource population from0 to k*/
 
@@ -54,6 +55,7 @@ class ResourceALF {
     k = 0;
     umin = 0;
     area_radius = 0;
+    seq_areas_id = 0;
   }
 
   ResourceALF(UInt8 type, TConfigurationNode& t_tree);
@@ -73,7 +75,7 @@ class ResourceALF {
    *
    * @return true if a specific min value is reached
    */
-  bool doStep(const std::vector<CVector2>& kilobot_positions, const std::vector<UInt8> kilobot_states, const std::vector<AreaALF>& oth_areas, const Real arena_radius);
+  bool doStep(const std::vector<CVector2>& kilobot_positions, const std::vector<UInt8> kilobot_states, const std::vector<CColor> kilobot_colors, const std::vector<AreaALF>& oth_areas, const Real arena_radius);
 
 };
 

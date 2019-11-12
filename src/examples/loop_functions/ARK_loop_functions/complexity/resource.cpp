@@ -51,7 +51,8 @@ void ResourceALF::generate(const std::vector<AreaALF>& oth_areas, const Real are
       }
 
       if(!duplicate) {
-        AreaALF new_area(type, i, pos, area_radius, exploitation);
+        AreaALF new_area(type, seq_areas_id, pos, area_radius, exploitation);
+        seq_areas_id++;
         // add to the current areas
         areas.push_back(new_area);
         break;
@@ -66,11 +67,12 @@ void ResourceALF::generate(const std::vector<AreaALF>& oth_areas, const Real are
   }
 }
 
-bool ResourceALF::doStep(const std::vector<CVector2>& kilobot_positions, const std::vector<UInt8> kilobot_states, const std::vector<AreaALF>& oth_areas, const Real arena_radius) {
+bool ResourceALF::doStep(const std::vector<CVector2>& kilobot_positions, const std::vector<UInt8> kilobot_states, const std::vector<CColor> kilobot_colors, const std::vector<AreaALF>& oth_areas, const Real arena_radius) {
   // first update kilobots positions in the areas
   // compute only for those kilobots with the right state
   for(UInt8 i=0; i<kilobot_positions.size(); ++i) {
-    if(kilobot_states.at(i) == this->type) {
+    if(kilobot_states.at(i) == this->type &&\
+       kilobot_colors.at(i) == CColor::GREEN) {
       for(AreaALF& area : areas) {
         if(SquareDistance(kilobot_positions.at(i), area.position) < pow(area_radius,2)) {
           area.kilobots_in_area++;
@@ -87,20 +89,15 @@ bool ResourceALF::doStep(const std::vector<CVector2>& kilobot_positions, const s
     if(it->doStep()) {
       it = areas.erase(it);
       population = areas.size();
-      std::cout << " DELETED " << std::endl;
     } else {
       // increment iterator
       ++it;
     }
   }
 
-// recompute current normalize population after deletion
-/* apply growth */
+  /* apply growth */
   // the logistic growth up bound for the population here is omitted and is 1
-  std::cout << "population before is " << population << std::endl;
   population += (population)*eta*(1-population/k);
-  std::cout << "population after is " << population << std::endl;
-  std::cout << "--------------------------" << std::endl;
 
   /* regenerate area */
   // check how many areas we have to generate now

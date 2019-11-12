@@ -60,6 +60,7 @@ void CComplexityALF::SetupInitialKilobotStates() {
   /* allocate space for the vectores */
   m_vecKilobotStates.resize(m_tKilobotEntities.size());
   m_vecKilobotsPositions.resize(m_tKilobotEntities.size());
+  m_vecKilobotColors.resize(m_tKilobotEntities.size());
   m_vecLastTimeMessaged.resize(m_tKilobotEntities.size());
   m_fMinTimeBetweenTwoMsg = Max<Real>(1.0, m_tKilobotEntities.size() * m_fTimeForAMessage / 3.0);
   for(UInt16 it=0;it< m_tKilobotEntities.size();it++){
@@ -72,9 +73,10 @@ void CComplexityALF::SetupInitialKilobotStates() {
 /****************************************/
 
 void CComplexityALF::SetupInitialKilobotState(CKilobotEntity &c_kilobot_entity){
-  /* The kilobots begins outside the clustering hub*/
-  UInt16 unKilobotID=GetKilobotId(c_kilobot_entity);
+  UInt16 unKilobotID = GetKilobotId(c_kilobot_entity);
   m_vecKilobotStates[unKilobotID] = 255;
+  m_vecKilobotsPositions[unKilobotID] = GetKilobotPosition(c_kilobot_entity);
+  m_vecKilobotColors[unKilobotID] = CColor::WHITE;
   m_vecLastTimeMessaged[unKilobotID] = -1000;
 
   /* Get a random rotation within the circular arena */
@@ -167,7 +169,7 @@ void CComplexityALF::GetExperimentVariables(TConfigurationNode& t_tree){
 void CComplexityALF::UpdateVirtualEnvironments() {
   // now do step and eventually generate new areas
   for(ResourceALF& resource : resources) {
-    resource.doStep(m_vecKilobotsPositions, m_vecKilobotStates, areas, circular_arena_radius);
+    resource.doStep(m_vecKilobotsPositions, m_vecKilobotStates, m_vecKilobotColors, areas, circular_arena_radius);
   }
 }
 
@@ -177,8 +179,6 @@ void CComplexityALF::UpdateVirtualEnvironments() {
 void CComplexityALF::UpdateKilobotStates(){
   // resets kbs states and positions
   // TODO Check this one
-  // this->m_vecKilobotStates.clear();
-  this->m_vecKilobotsPositions.clear();
 
   for(UInt16 it=0;it< m_tKilobotEntities.size();it++){
     /* Update the virtual states and actuators of the kilobot*/
@@ -194,21 +194,22 @@ void CComplexityALF::UpdateKilobotStates(){
 void CComplexityALF::UpdateKilobotState(CKilobotEntity &c_kilobot_entity){
   // current kb id
   UInt16 unKilobotID = GetKilobotId(c_kilobot_entity);
-  m_vecKilobotStates[unKilobotID] = 255;
 
+  // update kb position
+  m_vecKilobotsPositions[unKilobotID] = GetKilobotPosition(c_kilobot_entity);
+
+  // update kb led color
+  m_vecKilobotColors[unKilobotID] = GetKilobotLedColor(c_kilobot_entity);
+
+  // update kb status
+  m_vecKilobotStates[unKilobotID] = 255;
   // check against resources
   for(const ResourceALF& resource : resources) {
     for(const AreaALF& area : resource.areas) {
       // distance from the center of area
-      if(SquareDistance(GetKilobotPosition(c_kilobot_entity), area.position) < pow(area.radius,2)) {
+      if(SquareDistance(GetKilobotPosition(c_kilobot_entity), area.position) <= pow(area.radius,2)) {
         // update the state and position of the kilobot and store it for later use
         m_vecKilobotStates[unKilobotID] = resource.type;
-        // if the led color of a kilobot is green  means it is committed and working in place
-        // hence store its position to update the resource that are exploited
-        if(GetKilobotLedColor(c_kilobot_entity) == CColor::GREEN) {
-          m_vecKilobotsPositions.push_back(GetKilobotPosition(c_kilobot_entity));
-        }
-        // got it, no need to search anymore
         return;
       }
     }
@@ -269,7 +270,7 @@ void CComplexityALF::UpdateVirtualSensor(CKilobotEntity &c_kilobot_entity){
           kb_pop = 255*hit_resource/(19);
         estimated_by_kb = estimated_by_kb*alpha_ema + (1-alpha_ema)*kb_pop;
         float actual_ut = resources.at(0).population;
-        std::cout << actual_ut << std::endl;
+        // std::cout << actual_ut << std::endl;
         m_cOutput << hit_empty_space << ", "
                   << hit_resource << ", "
                   << estimated_by_kb << ", "
