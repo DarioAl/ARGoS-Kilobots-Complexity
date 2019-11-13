@@ -19,10 +19,10 @@ base_dir=`dirname $base_config`
 
 echo "$CONFIGURATION_FILE" | egrep "^$SHARED_DIR" &> /dev/null || exit 1
 
-areas="25 50 75 100 125 150 175 200 225 250"
-kbs="1 50"
+areas="25"
+kbs="10 50 100"
 
-RUNS=25
+RUNS=30
 
 for par1 in $kbs; do
     for par2 in $areas; do

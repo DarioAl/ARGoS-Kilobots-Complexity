@@ -16,7 +16,7 @@ UInt8 estimated_by_kb = 125; // exponential average as done in the kb
 
 CComplexityALF::CComplexityALF() :
   m_unDataAcquisitionFrequency(10),
-  circular_arena_radius(1),
+  circular_arena_radius(0.51),
   circular_arena_width(0.01),
   circular_arena_height(0.05),
   circular_arena_walls(50) {}
@@ -38,7 +38,6 @@ void CComplexityALF::Init(TConfigurationNode& t_node) {
 
 /****************************************/
 /****************************************/
-
 void CComplexityALF::Reset() {
   m_cOutput.close();
   /* Reopen the file, erasing its contents */

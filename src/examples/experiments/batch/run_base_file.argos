@@ -62,8 +62,8 @@
           <!-- umin is the lower population threshold     -->
           <resource
             type="0"
-            initial_population = "1"
-            eta="1"
+            initial_population = "25"
+            eta="0.001"
             k="__AREAS__"
             umin="0.5"
             exploitation="exploitation">

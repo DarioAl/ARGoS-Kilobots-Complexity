@@ -1,6 +1,6 @@
 #include "resource.h"
 
-ResourceALF::ResourceALF(UInt8 type, TConfigurationNode& t_tree) : type(type), area_radius(0.04) {
+ResourceALF::ResourceALF(UInt8 type, TConfigurationNode& t_tree) : type(type), area_radius(0.035) {
   /* Get the virtual environments node from the .argos file */
   TConfigurationNode& tVirtualEnvironmentsNode = GetNode(t_tree, "environments");
   TConfigurationNodeIterator itNodes;
@@ -37,11 +37,13 @@ void ResourceALF::generate(const std::vector<AreaALF>& oth_areas, const Real are
 
   for(UInt32 i=0; i<num_of_areas; ++i) {
     for(tries = 0; tries <= maxTries; tries++) {
+      do {
       Real rand_angle = ((Real) rand()/(RAND_MAX))*2*CRadians::PI.GetValue();
       Real rand_displacement_x = ((Real) rand()/(RAND_MAX))*(arena_radius);
       Real rand_displacement_y = ((Real) rand()/(RAND_MAX))*(arena_radius);
       pos = CVector2(rand_displacement_x*cos(rand_angle),
                      rand_displacement_y*sin(rand_angle));
+      } while(SquareDistance(pos, CVector2(0,0)) > pow(2,arena_radius-area_radius));
 
       bool duplicate = false;
       for(const AreaALF& an_area : all_areas) {
@@ -54,6 +56,7 @@ void ResourceALF::generate(const std::vector<AreaALF>& oth_areas, const Real are
         AreaALF new_area(type, seq_areas_id, pos, area_radius, exploitation);
         seq_areas_id++;
         // add to the current areas
+        all_areas.push_back(new_area); // used to avoid duplicates
         areas.push_back(new_area);
         break;
       }

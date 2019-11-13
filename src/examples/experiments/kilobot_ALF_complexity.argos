@@ -57,9 +57,9 @@
           <!-- umin is the lower population threshold     -->
           <resource
             type="0"
-            initial_population = "15"
-            eta="0.005"
-            k="125"
+            initial_population = "25"
+            eta="0.0005"
+            k="25"
             umin="0.5"
             exploitation="linear">
           </resource>
@@ -74,11 +74,11 @@
        </environments>
     </loop_functions>
 
-    <arena size="2.5, 2.5, 1" center="0,0,0.5">
+    <arena size="2.0, 2.0, 1" center="0,0,0.5">
         <distribute>
           <position method="uniform" min="-0.95,-0.95,0" max="0.95,0.95,0" />
             <orientation method="uniform" min="0,0,0" max="360,0,0" />
-            <entity quantity="12" max_trials="100">
+            <entity quantity="10" max_trials="100">
                 <kilobot id="kb">
                     <controller config="listener"/> <dynamics2d friction="0.7" />
                 </kilobot>
@@ -87,7 +87,7 @@
 
         <floor id="floor"
         source="loop_functions"
-        pixels_per_meter="120" />
+        pixels_per_meter="150" />
     </arena>
 
     <!-- ******************* -->
