@@ -140,7 +140,8 @@ private:
   /************************************/
   /*       Experiment variables       */
   /************************************/
-
+  /* random number generator */
+  CRandom::CRNG* c_rng;
   /* output file for data acquizition */
   std::ofstream m_cOutput;
   /* output file name*/

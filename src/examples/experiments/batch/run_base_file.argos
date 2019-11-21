@@ -5,8 +5,8 @@
     <!-- * General configuration * -->
     <!-- ************************* -->
     <framework>
-        <system threads="6" />
-        <experiment length="1200"
+        <system threads="7" />
+        <experiment length="12000"
         ticks_per_second="10"
         random_seed="__SEED__" />
     </framework>
@@ -63,7 +63,7 @@
           <resource
             type="0"
             initial_population = "25"
-            eta="0.001"
+            eta="0.004"
             k="__AREAS__"
             umin="0.5"
             exploitation="exploitation">

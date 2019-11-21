@@ -7,17 +7,17 @@
  */
 
 #include "kilolib.h"
+#include "distribution_functions.c"
 
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <limits.h>
 
-#include "distribution_functions.c"
-
-
+// number of resources in the arena
 #define RESOURCES_SIZE 1
 
+// message buffer
 #define USE_BUFFER
 #ifdef USE_BUFFER
 #define BUFFER_SIZE 10
@@ -25,6 +25,8 @@
 #define BUFFER_SIZE 1
 #endif
 
+// the kb is biased toward the center when close to the border
+#define CENTER_BIAS
 
 /*-------------------------------------------------------------------*/
 /* General Variables                                                 */
@@ -55,12 +57,17 @@ motion_t current_motion_type = FORWARD;
 /* counters for motion, turning and random_walk */
 const double std_motion_steps = 5*16;
 const double levy_exponent = 2; // 2 is brownian like motion
-const double  crw_exponent = 0.1; // higher more straight
+const double  crw_exponent = 0.0; // higher more straight
 uint32_t turning_ticks = 0; // keep count of ticks of turning
 const uint8_t max_turning_ticks = 80; /* constant to allow a maximum rotation of 180 degrees with \omega=\pi/5 */
 unsigned int straight_ticks = 0; // keep count of ticks of going straight
 const uint16_t max_straight_ticks = 320;
 uint32_t last_motion_ticks = 0;
+
+#ifdef CENTER_BIAS
+double my_distance_from_center = 0;
+double my_theta_from_center = 0;
+#endif
 
 /*-------------------------------------------------------------------*/
 /* Smart Arena Variables                                             */
@@ -177,7 +184,6 @@ void set_motion(motion_t new_motion_type) {
 /*-------------------------------------------------------------------*/
 void exponential_average(uint8_t resource_id, uint8_t resource_pop) {
   // update by using exponential moving averagae to update estimated population
-  /* https://stackoverflow.com/questions/37300684/implementing-exponential-moving-average-in-c */
   resources_pops[resource_id] = (uint8_t)(resources_pops[resource_id])*stocazzo+(1-stocazzo)*resource_pop;
 }
 
@@ -244,10 +250,15 @@ void message_rx(message_t *msg, distance_measurement_t *d) {
       merge_scan(false);
     }
 
-    // UNCOMMENT IF NEEDED
-    // get arena coordinates
-    /* my_coordinates.x = ((msg->data[2]&0b11) << 8) | (msg->data[3]); */
-    /* my_coordinates.y = ((msg->data[4]&0b11) << 8) | (msg->data[5]); */
+    #ifdef CENTER_BIAS
+    // used to bias toward the center the random walk when too close to the border
+    my_distance_from_center = ((double) msg->data[3]) / 100 ;
+    my_theta_from_center = ((double)msg->data[4]/10);
+    #endif
+
+    // UNCOMMENT IF NEEDED get arena coordinates
+    /* my_coordinates.x = ((msg->data[3]&0b11) << 8) | (msg->data[4]); */
+    /* my_coordinates.y = ((msg->data[5]&0b11) << 8) | (msg->data[6]); */
   } else if(msg->type==1 && id!=kilo_uid && msg->crc==message_crc(msg)) {
     /* ----------------------------------*/
     /* KB interactive message            */
@@ -285,9 +296,8 @@ void message_rx(message_t *msg, distance_measurement_t *d) {
 
     // now check for received utilities
     // and use these to update our perceived utilities
-    exponential_average(msg->data[3], msg->data[4]);
-    if(RESOURCES_SIZE>1) {
-      exponential_average(msg->data[5], msg->data[6]);
+    for(uint8_t res_index=0; res_index<RESOURCES_SIZE; res_index++) {
+      exponential_average(msg->data[3+res_index], res_index);
     }
 
     // UNCOMMENT IF NEEDED
@@ -431,7 +441,7 @@ void random_walk(){
   case TURN_LEFT:
   case TURN_RIGHT:
     /* if turned for enough time move forward */
-    if (kilo_ticks > last_motion_ticks + turning_ticks) {
+    if(kilo_ticks > last_motion_ticks + turning_ticks) {
       /* start moving forward */
       last_motion_ticks = kilo_ticks;
       set_motion(FORWARD);
@@ -439,7 +449,7 @@ void random_walk(){
     break;
   case FORWARD:
     /* if moved forward for enough time turn */
-    if (kilo_ticks > last_motion_ticks + straight_ticks) {
+    if(kilo_ticks > last_motion_ticks + straight_ticks) {
       /* perform a random turn */
       last_motion_ticks = kilo_ticks;
       if (rand_hard() % 2) {
@@ -449,11 +459,22 @@ void random_walk(){
       }
       // compute turning time
       double angle = 0;
-      if(crw_exponent == 0) {
-          angle = (uniform_distribution(0, (M_PI)));
+#ifdef CENTER_BIAS
+      if(my_distance_from_center >= 0.9) {
+        set_motion(TURN_RIGHT);
+        // when too close to the border bias toward center
+        // compute turning time
+        angle = my_theta_from_center;
       } else {
-        angle = fabs(wrapped_cauchy_ppf(crw_exponent));
+#endif
+        if(crw_exponent == 0) {
+          angle = uniform_distribution(0, (M_PI));
+        } else {
+          angle = fabs(wrapped_cauchy_ppf(crw_exponent));
+        }
+#ifdef CENTER_BIAS
       }
+#endif
       turning_ticks = (uint32_t)((angle / M_PI) * max_turning_ticks);
       straight_ticks = (uint32_t)(fabs(levy(std_motion_steps, levy_exponent)));
     }
@@ -544,29 +565,11 @@ void loop() {
   interactive_message.data[1] = current_decision_state;
   interactive_message.data[2] = current_arena_state;
 
-  /* if committed share your utility */
-  uint8_t rand_resource_1, rand_resource_2;
-  if(current_decision_state != 255) {
-    rand_resource_1 = current_decision_state; // this is set to avoid sharing same resources
-    interactive_message.data[3] = resources_pops[current_decision_state];
-    interactive_message.data[4] = resources_pops[current_decision_state];
-  } else {
-    /* share a random utility */
-    rand_resource_1 = rand_hard()*RESOURCES_SIZE;
-    interactive_message.data[3] = rand_resource_1;
-    interactive_message.data[4] = resources_pops[rand_resource_1];
+  /* share estimated utilities for all resources */
+  for(uint8_t res_index=0; res_index<RESOURCES_SIZE; res_index++) {
+    interactive_message.data[3+res_index] = resources_pops[res_index];
   }
-  /* share also a second random other utility */
-  if(RESOURCES_SIZE>1) {
-    do {
-      rand_resource_2 = rand_hard()*RESOURCES_SIZE;
-    }
-    while(rand_resource_2 == current_decision_state && rand_resource_2 == rand_resource_1);
 
-    interactive_message.data[5] = rand_resource_2;
-    interactive_message.data[6] = resources_pops[rand_resource_2];
-    resources_pops[0] = 1;
-  }
   /* fill up the crc */
   interactive_message.crc = message_crc(&interactive_message);
 

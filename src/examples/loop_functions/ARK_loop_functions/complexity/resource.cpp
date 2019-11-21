@@ -21,6 +21,7 @@ ResourceALF::ResourceALF(UInt8 type, TConfigurationNode& t_tree) : type(type), a
       // areas of the resource
       this->areas.reserve(k);
     }
+    r_rng = CRandom::CreateRNG("argos");
   }
 }
 
@@ -38,11 +39,12 @@ void ResourceALF::generate(const std::vector<AreaALF>& oth_areas, const Real are
   for(UInt32 i=0; i<num_of_areas; ++i) {
     for(tries = 0; tries <= maxTries; tries++) {
       do {
-      Real rand_angle = ((Real) rand()/(RAND_MAX))*2*CRadians::PI.GetValue();
-      Real rand_displacement_x = ((Real) rand()/(RAND_MAX))*(arena_radius);
-      Real rand_displacement_y = ((Real) rand()/(RAND_MAX))*(arena_radius);
-      pos = CVector2(rand_displacement_x*cos(rand_angle),
-                     rand_displacement_y*sin(rand_angle));
+        Real rand_angle = r_rng->Uniform(CRange<Real>(-CRadians::PI.GetValue(), CRadians::PI.GetValue()));
+        Real rand_displacement_x = r_rng->Uniform(CRange<Real>(0, arena_radius-area_radius/2));
+        Real rand_displacement_y = r_rng->Uniform(CRange<Real>(0, arena_radius-area_radius/2));
+
+        pos = CVector2(rand_displacement_x*cos(rand_angle),
+                       rand_displacement_y*sin(rand_angle));
       } while(SquareDistance(pos, CVector2(0,0)) > pow(2,arena_radius-area_radius));
 
       bool duplicate = false;

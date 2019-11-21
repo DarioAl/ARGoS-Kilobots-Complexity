@@ -26,6 +26,9 @@ using namespace argos;
 
 class ResourceALF {
  public:
+  /* random number generator */
+  CRandom::CRNG* r_rng;
+
   /************************************/
   /* virtual environment visualization*/
   /************************************/

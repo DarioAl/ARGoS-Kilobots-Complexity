@@ -22,7 +22,7 @@ echo "$CONFIGURATION_FILE" | egrep "^$SHARED_DIR" &> /dev/null || exit 1
 areas="25"
 kbs="10 50 100"
 
-RUNS=30
+RUNS=50
 
 for par1 in $kbs; do
     for par2 in $areas; do

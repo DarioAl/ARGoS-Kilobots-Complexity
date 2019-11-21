@@ -87,7 +87,7 @@
 
         <floor id="floor"
         source="loop_functions"
-        pixels_per_meter="150" />
+        pixels_per_meter="25" />
     </arena>
 
     <!-- ******************* -->
@@ -121,8 +121,7 @@
                 <placement idx="6" position="-1,-1,1" look_at="0,0,0" lens_focal_length="15" />
                 <placement idx="7" position="-1,0,1" look_at="0,0,0" lens_focal_length="15" />
                 <placement idx="8" position="-1,1,1" look_at="0,0,0" lens_focal_length="15" />
-                <placement idx="9" position="-0.0229259,-0.177184,0.0725521" look_at="-0.0273839,-0.812385,0.0624333" lens_focal_length="20" />
-                <placement idx="10" position="-0.0229259,-0.177184,0.0725521" look_at="-0.0273839,0.812385,0.0624333" lens_focal_length="20" />
+                <placement idx="9" position="0.0,0.0,0.05" look_at="-0.0,90,0.0" lens_focal_length="20" />
             </camera>
             <!-- <user_functions library="build/examples/loop_functions/id_loop_functions/libid_loop_functions" -->
             <!-- label="id_qtuser_functions" /> -->
