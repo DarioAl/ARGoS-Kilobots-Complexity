@@ -140,7 +140,7 @@ message_t interactive_message;
 uint8_t valid_until = 100;
 
 /* buffer definitions storing information from other kbs */
-uint8_t buffer_iterator = 255;
+uint8_t buffer_iterator = 0;
 typedef struct compressed_messsage {
   uint32_t time_received;   // time stamp
   uint8_t current_decision; // agent decision
@@ -230,6 +230,9 @@ void merge_scan(bool time_window_is_over) {
 /* and a CRC (2 bytes).                                              */
 /*-------------------------------------------------------------------*/
 
+
+// TODO FIX THE FUCKING BUG HERE!!!!!!
+// maybe is not buffer fault
 void message_rx(message_t *msg, distance_measurement_t *d) {
   /* get id (always firt byte) */
   uint8_t id = msg->data[0];
@@ -265,25 +268,26 @@ void message_rx(message_t *msg, distance_measurement_t *d) {
     /* ----------------------------------*/
 
     // parse the message
-    compressed_messsage c_message;
-    c_message.time_received = kilo_ticks;
-    c_message.current_decision = msg->data[1];
-    c_message.resource_id = msg->data[2];
-    // only store this one if the agent is committed
-    // we are not going to use it anyway but it is bettere to avoid bad data
-    if (msg->data[1] != 255) {
-      c_message.resource_pop = msg->data[3];
-    }
+    // check for received utilities
+    // and use these to update our perceived utilities
+    // NOTE we assume at max 3 areas and their populations are ordered and
+    // sent at position 3-4-5 respectively area 1-2-3
 
-    // store the message in the buffer
-    if(buffer_iterator == 255) {
-      for(uint8_t i=0; i<BUFFER_SIZE; i++) {
-        // trick to avoid accessing bad data at the very beginning
-        // this will be filled very soon with good data anyway
-        last_received_messages[1] = c_message;
-      }
-      buffer_iterator = 0; // check if this is the first message we receive
-    } else {
+    //TODO THIS IS ONE EXPLODES
+    /* for(uint8_t res_index=0; res_index<RESOURCES_SIZE; res_index++) { */
+    /*   exponential_average(msg->data[3+res_index], res_index); */
+    /* } */
+
+    // if the sending kilobot is committed then store the message for later use
+    // i.e. this will be used during the decision process
+    if(msg->data[1] != 255) {
+      compressed_messsage c_message;
+      c_message.time_received = kilo_ticks;
+      c_message.current_decision = msg->data[1];
+      c_message.resource_id = msg->data[2];
+      c_message.resource_pop = msg->data[3];
+
+      // store the message in the buffer
       last_received_messages[buffer_iterator] = c_message;
 
       // circular buffer
@@ -292,12 +296,6 @@ void message_rx(message_t *msg, distance_measurement_t *d) {
       } else {
         buffer_iterator++;
       }
-    }
-
-    // now check for received utilities
-    // and use these to update our perceived utilities
-    for(uint8_t res_index=0; res_index<RESOURCES_SIZE; res_index++) {
-      exponential_average(msg->data[3+res_index], res_index);
     }
 
     // UNCOMMENT IF NEEDED
@@ -347,19 +345,19 @@ void take_decision() {
     /****************************************************/
     /* recruitment over a random agent                  */
     /****************************************************/
-    compressed_messsage recruitment_message = last_received_messages[0];
-    if(buffer_iterator != 255) {
-      uint8_t index = rand_hard()*BUFFER_SIZE;
-      recruitment_message = last_received_messages[index];
-      // if the message is valid and
-      // the agent sending it committed and
-      // the population is above umin
+    compressed_messsage recruitment_message;
 
-      if(kilo_ticks-recruitment_message.time_received < valid_until &&
-         recruitment_message.current_decision != 255 &&
-         recruitment_message.resource_pop > resources_umin[recruitment_message.resource_id]) {
-        processes[RESOURCES_SIZE] = recruitment_message.resource_pop*k;
-      }
+    uint8_t index = round(rand_hard()*BUFFER_SIZE-1);
+    recruitment_message = last_received_messages[index];
+
+    // if the message is valid and
+    // the agent sending it committed and
+    // the population is above umin
+    if(recruitment_message.time_received != 0 &&
+       kilo_ticks-recruitment_message.time_received < valid_until &&
+       recruitment_message.current_decision != 255 &&
+       recruitment_message.resource_pop > resources_umin[recruitment_message.resource_id]) {
+      processes[RESOURCES_SIZE] = recruitment_message.resource_pop*k;
     }
 
     /****************************************************/
@@ -400,18 +398,16 @@ void take_decision() {
 
     uint8_t cross_inhibition = 0;
     compressed_messsage cross_message;
-    if(buffer_iterator != 255) { // FIXME this only check for the first message
-      uint8_t index = rand_hard()*BUFFER_SIZE;
-      cross_message = last_received_messages[index];
-      // if the message is valid and
-      // the agent sending it committed and
-      // the population is above umin
-      // TODO population
-      if(kilo_ticks-cross_message.time_received < valid_until &&
-         cross_message.current_decision != 255 &&
-         cross_message.resource_pop > resources_umin[cross_message.resource_id]) {
-        cross_inhibition = cross_message.resource_pop*k;
-      }
+    uint8_t index = rand_hard()*BUFFER_SIZE;
+    cross_message = last_received_messages[index];
+    // if the message is valid and
+    // the agent sending it is committed and
+    // the population is above umin
+    if(cross_message.time_received != 0 &&
+       kilo_ticks-cross_message.time_received < valid_until &&
+       cross_message.current_decision != 255 &&
+       cross_message.resource_pop > resources_umin[cross_message.resource_id]) {
+      cross_inhibition = cross_message.resource_pop*k;
     }
 
     /****************************************************/
@@ -502,6 +498,15 @@ void setup() {
     resources_hits[i] = 0;
     resources_pops[i] = 125;
     resources_umin[i] = 0;
+  }
+  /* Initialise communication buffer */
+  compressed_messsage fake_cmsg;
+  fake_cmsg.time_received = 0; // 0 means ignore this message
+  fake_cmsg.current_decision = 255; // uncommitted
+  fake_cmsg.resource_id = 0;
+  fake_cmsg.resource_pop = 0;
+  for(uint8_t i=0; i<BUFFER_SIZE; i++) {
+    last_received_messages[i] = fake_cmsg;
   }
 }
 

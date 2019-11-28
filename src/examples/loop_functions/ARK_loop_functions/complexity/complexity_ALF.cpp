@@ -210,6 +210,7 @@ void CComplexityALF::UpdateKilobotState(CKilobotEntity &c_kilobot_entity){
   // current kb id
   UInt16 unKilobotID = GetKilobotId(c_kilobot_entity);
 
+
   // update kb position
   m_vecKilobotsPositions[unKilobotID] = GetKilobotPosition(c_kilobot_entity);
 
@@ -262,7 +263,6 @@ void CComplexityALF::UpdateVirtualSensor(CKilobotEntity &c_kilobot_entity){
     Real turning_angle = M_PI-acos(kb_orientation.Normalize().DotProduct(kb_position.Normalize()));
     // 1 byte for r in percentage (0 in the center 100 at the border)
     m_tMessages[unKilobotID].data[3] = (UInt8) (pdistance*100);
-    std::cout << m_tMessages[unKilobotID].data[3] << std::endl;
     // 1 bytes for turning angle
     m_tMessages[unKilobotID].data[4] = ((UInt8) (turning_angle)*10); // hi part of the uint16
 
