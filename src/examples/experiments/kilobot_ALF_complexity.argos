@@ -61,7 +61,7 @@
             eta="0.0005"
             k="25"
             umin="0.5"
-            exploitation="linear">
+            exploitation="quadratic">
           </resource>
          <!-- <resource -->
          <!--    type="1" -->
@@ -78,7 +78,7 @@
         <distribute>
           <position method="uniform" min="-0.95,-0.95,0" max="0.95,0.95,0" />
             <orientation method="uniform" min="0,0,0" max="360,0,0" />
-            <entity quantity="100" max_trials="100">
+            <entity quantity="1" max_trials="100">
                 <kilobot id="kb">
                     <controller config="listener"/> <dynamics2d friction="0.7" />
                 </kilobot>

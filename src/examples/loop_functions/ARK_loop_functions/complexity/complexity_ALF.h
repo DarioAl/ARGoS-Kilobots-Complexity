@@ -16,6 +16,8 @@ class CFloorEntity;
 class CSimulator;
 }
 
+class CCI_KilobotController;
+
 #include <math.h>
 #include <argos3/core/simulator/loop_functions.h>
 #include <argos3/plugins/robots/kilobot/simulator/ALF.h>
@@ -24,8 +26,6 @@ class CSimulator;
 
 #include <argos3/core/utility/math/vector3.h>
 #include <argos3/core/utility/math/vector2.h>
-#include <argos3/core/utility/math/ray2.h>
-#include <argos3/core/utility/math/quaternion.h>
 #include <argos3/core/utility/math/rng.h>
 #include <argos3/core/utility/logging/argos_log.h>
 
@@ -39,6 +39,9 @@ class CSimulator;
 #include <argos3/plugins/robots/kilobot/simulator/kilobot_communication_medium.h>
 #include <argos3/plugins/robots/kilobot/simulator/kilobot_communication_default_actuator.h>
 #include <argos3/plugins/simulator/entities/box_entity.h>
+
+//debug kilobot info
+#include <examples/behaviors/complexity.h>
 
 //kilobot messaging
 #include <argos3/plugins/robots/kilobot/control_interface/kilolib.h>
@@ -101,6 +104,9 @@ public:
   /** Get the message to send to a Kilobot according to its position */
   void UpdateVirtualSensor(CKilobotEntity& c_kilobot_entity);
 
+  /** Get debuf information from kilobots **/
+  virtual void PostStep();
+
   /** Used to plot the Virtual environment on the floor */
   virtual CColor GetFloorColor(const CVector2& vec_position_on_plane);
 
@@ -136,6 +142,11 @@ private:
   /* used to store the last message sent to each kilobot */
   std::vector<Real> m_vecLastTimeMessaged;
   Real m_fMinTimeBetweenTwoMsg;
+
+  /************************************/
+  /*      Kilobot DEBUG info          */
+  /************************************/
+  std::vector<std::pair<CCI_KilobotController*, debug_info_t*>> m_tKBs;
 
   /************************************/
   /*       Experiment variables       */

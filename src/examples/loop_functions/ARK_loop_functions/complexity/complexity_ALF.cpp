@@ -1,15 +1,15 @@
 #include "complexity_ALF.h"
+#include <argos3/plugins/robots/kilobot/control_interface/ci_kilobot_controller.h>
 
 // Enable this part of the code to log the perceived utility estimation in the log file
 #define DISTRIBUTION_ESTIMATION
 #ifdef DISTRIBUTION_ESTIMATION
-Real time_last_estimation = 0; // when the last estimation has been computed
-UInt8 time_window_for_estimation = 20; // how long an estimation is
-std::vector<std::array<UInt8,9>> estimated_by_all; // all other kbs estimations
-std::vector<UInt8> hit_resources;
-std::vector<UInt8> hit_empties;
-std::vector<UInt8> sent_messages;
-Real alpha_emas[9] = {0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9}; // ema alpha value
+UInt8 debug_counter;
+UInt8 overall_r0_estimate;
+UInt8 overall_empty_hits;
+UInt8 overall_r0_hits;
+Real overall_distance;
+UInt8 overall_num_messages;
 #endif
 
 /****************************************/
@@ -40,31 +40,37 @@ void CComplexityALF::Init(TConfigurationNode& t_node) {
   m_cOutput.open(m_strOutputFileName, std::ios_base::trunc | std::ios_base::out);
 
 #ifdef DISTRIBUTION_ESTIMATION
-  m_cOutput << "emty, resource, est.1, est.2, est.3, est.4, est.5, est.6, est.7, est.8, eat.9, ut, distance, msgs" << std::endl;
-
-  //TODO REMOVE AFTER ESTIMATION, THIS IS USED ONLY FOR SIMULATED COMMUNICATION
-  estimated_by_all.reserve(m_tKilobotEntities.size());
-  hit_resources.reserve(m_tKilobotEntities.size());
-  hit_empties.reserve(m_tKilobotEntities.size());
-  sent_messages.reserve(m_tKilobotEntities.size());
-  std::array<UInt8,9> initial_values = {125,125,125,125,125,125,125,125,125};
-  for(UInt8 i=0; i<m_tKilobotEntities.size(); i++) {
-    estimated_by_all.push_back(initial_values);
-    hit_resources.push_back(0);
-    hit_empties.push_back(0);
-    sent_messages.push_back(c_rng->Uniform(CRange<UInt32>(0,10)));
+  m_tKBs.clear();
+  /* Get the map of all kilobots from the space */
+  CSpace::TMapPerType& tKBMap = GetSpace().GetEntitiesByType("kilobot");
+  /* Go through them */
+  for(CSpace::TMapPerType::iterator it = tKBMap.begin();
+      it != tKBMap.end();
+      ++it) {
+    /* Create a pointer to the current kilobot */
+    CKilobotEntity* pcKB = any_cast<CKilobotEntity*>(it->second);
+    CCI_KilobotController* pcKBC = &dynamic_cast<CCI_KilobotController&>(pcKB->GetControllableEntity().GetController());
+    /* Create debug info for controller */
+    debug_info_t* ptDebugInfo = pcKBC->DebugInfoCreate<debug_info_t>();
+    /* Append to list */
+    m_tKBs.push_back(std::make_pair(pcKBC, ptDebugInfo));
   }
-  sent_messages.at(0) = 0;
-  #endif
+
+  // initialize log file
+  m_cOutput << "e_hits, r0_hits, r0_est_ut, r1_ut, dist, num_msgs" << std::endl;
+  debug_counter = 0;
+  overall_r0_estimate = 0;
+  overall_empty_hits = 0;
+  overall_r0_hits = 0;
+  overall_distance = 0;
+  overall_num_messages = 0;
+
+#endif
 }
 
 /****************************************/
 /****************************************/
-void CComplexityALF::Reset() {
-  m_cOutput.close();
-  /* Reopen the file, erasing its contents */
-  m_cOutput.open(m_strOutputFileName, std::ios_base::trunc | std::ios_base::out);
-}
+void CComplexityALF::Reset() {}
 
 /****************************************/
 /****************************************/
@@ -270,74 +276,55 @@ void CComplexityALF::UpdateVirtualSensor(CKilobotEntity &c_kilobot_entity){
     // m_tMessages[unKilobotID].data[4] = (((UInt16) theta) >> 8); // hi part of the uint16
     // m_tMessages[unKilobotID].data[5] = (((UInt16) theta) & 0xff); // lo part of the uint16
 
-#ifdef DISTRIBUTION_ESTIMATION
-  if(m_fTimeInSeconds-time_last_estimation >= time_window_for_estimation) {
-      // only print if kb id == 0
-      if(unKilobotID == 0) {
-        time_last_estimation = m_fTimeInSeconds;
-        // estimate
-        uint8_t kb_pop = 255;
-        if(hit_resources.at(unKilobotID) < sent_messages.at(unKilobotID))
-          kb_pop = 255*hit_resources.at(unKilobotID)/(sent_messages.at(unKilobotID));
-
-        // NOTE compute for different EMA values
-        for(UInt8 i=0; i<9; i++){
-          estimated_by_all.at(unKilobotID)[i] = estimated_by_all.at(unKilobotID)[i]*alpha_emas[i] + (1-alpha_emas[i])*kb_pop;
-        }
-
-        float actual_ut = resources.at(0).population;
-        m_cOutput << hit_empties.at(unKilobotID) << ", " << hit_resources.at(unKilobotID) << ", ";
-        for(UInt8 i=0; i<9; i++){
-          m_cOutput << estimated_by_all.at(unKilobotID)[i] << ", ";
-        }
-        // compute distance from the center in average for all kbs
-        float all_distance = 0;
-        for(CVector2 kb_vec : m_vecKilobotsPositions) {
-          all_distance += SquareDistance(kb_vec, CVector2(0,0));
-        }
-        m_cOutput << actual_ut << ", " << sqrt(all_distance/m_vecKilobotsPositions.size()) << ", " << sent_messages.at(unKilobotID) << std::endl;
-      }
-
-      // reset counters
-      hit_resources.at(unKilobotID) = 0;
-      hit_empties.at(unKilobotID) = 0;
-      sent_messages.at(unKilobotID) = 0;
-    } else {
-      sent_messages.at(unKilobotID) += 1;
-      if(m_vecKilobotStates[unKilobotID] != 255) {
-        hit_resources.at(unKilobotID) += 1;
-      } else {
-        hit_empties.at(unKilobotID) += 1;
-      }
-    }
-
-    // simulating communication
-    if(unKilobotID == 0) {
-      UInt8 receivedmsgs = 0;
-      for(UInt8 kb_index=1; kb_index < m_vecKilobotsPositions.size(); kb_index++) {
-        if(sent_messages.at(kb_index) >= 11) {
-          receivedmsgs++;
-          // estimate from oth point of view
-          uint8_t oth_kb_pop = 255;
-          if(hit_resources.at(kb_index) < sent_messages.at(kb_index))
-            oth_kb_pop = 255*hit_resources.at(kb_index)/(sent_messages.at(kb_index));
-
-          if(SquareDistance(m_vecKilobotsPositions.at(unKilobotID), m_vecKilobotsPositions.at(kb_index)) < 0.2){
-            for(uint8_t i=0; i<9; i++){
-              estimated_by_all.at(unKilobotID)[i] = estimated_by_all.at(unKilobotID)[i]*alpha_emas[i] + (1-alpha_emas[i])*oth_kb_pop;
-            }
-          }
-          hit_resources.at(kb_index) = 0;
-          hit_empties.at(kb_index) = 0;
-          sent_messages.at(kb_index) = 0;
-        }
-      }
-    }
-#endif
-
     /* Sending the message using the overhead controller */
     GetSimulator().GetMedium<CKilobotCommunicationMedium>("kilocomm").SendOHCMessageTo(c_kilobot_entity,&m_tMessages[unKilobotID]);
   }
+}
+
+/*********************************************/
+/* This is one is only used to store kb logs */
+/*********************************************/
+
+void CComplexityALF::PostStep() {
+  if(debug_counter < 81) {
+    debug_counter++;
+    return;
+  }
+
+  /* Go through the kilobots to get the positions */
+  for(UInt16 it=0;it< m_tKilobotEntities.size();it++){
+    /* Update the virtual states and actuators of the kilobot*/
+    overall_distance += SquareDistance(GetKilobotPosition(*m_tKilobotEntities[it]), CVector2(0,0));
+  }
+
+  /* Go through to get other debug info */
+  //TODO check why this does not work m_tKilobotEntities.size();
+  UInt8 nkbs = (m_tKilobotEntities.size()>3?3:m_tKilobotEntities.size());
+  for(size_t i=0; i<nkbs; ++i) {
+    // sum up all
+    overall_r0_estimate += m_tKBs[i].second->ema_resource0;
+    overall_empty_hits += m_tKBs[i].second->hits_empty;
+    overall_r0_hits += m_tKBs[i].second->hits_resource0;
+    overall_num_messages += m_tKBs[i].second->num_messages;
+  }
+
+  // average
+  overall_distance = sqrt(overall_distance);
+
+  // save to log file
+  m_cOutput << (overall_empty_hits/nkbs) << " "
+            << (overall_r0_hits/nkbs) << " "
+            << (overall_r0_estimate/nkbs) << " "
+            << resources.at(0).population << " "
+            << (overall_distance/nkbs) << " "
+            << (overall_num_messages/nkbs) << std::endl;
+  // reset counters
+  debug_counter = 0;
+  overall_r0_estimate = 0;
+  overall_empty_hits = 0;
+  overall_r0_hits = 0;
+  overall_distance = 0;
+  overall_num_messages = 0;
 }
 
 /****************************************/

@@ -60,13 +60,16 @@
           <!-- eta is the area growth rate                -->
           <!-- k is a discretized k i.e. number of areas  -->
           <!-- umin is the lower population threshold     -->
+
+            <!-- single area eta="0.0125" -->
+
           <resource
             type="0"
             initial_population = "25"
-            eta="0.0075"
+            eta = "0.00__ETA__"
             k="__AREAS__"
             umin="0.5"
-            exploitation="exploitation">
+            exploitation="quadratic">
           </resource>
           <!-- <resource -->
           <!--   type="1" -->
