@@ -1,5 +1,7 @@
 /** @author Dario Albani */
-
+#include <stdlib.h>
+#include <stdio.h>
+#
 #include "message_t_list.h"
 #include <stdlib.h>
 
@@ -167,6 +169,7 @@ void mtl_get_not_rebroadcasted(node_t* head, node_t* not_rebroadcasted) {
       current = current->next;
     } else {
       not_rebroadcasted = current;
+      return;
     }
   }
 }

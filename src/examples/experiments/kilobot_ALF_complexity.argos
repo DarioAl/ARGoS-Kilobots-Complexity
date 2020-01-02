@@ -5,10 +5,10 @@
     <!-- * General configuration * -->
     <!-- ************************* -->
     <framework>
-        <system threads="4"/>
+        <system threads="8"/>
         <experiment length="1000"
         ticks_per_second="10"
-        random_seed="1" />
+        random_seed="2" />
     </framework>
 
     <!-- *************** -->
@@ -23,7 +23,7 @@
                 <kilobot_communication implementation="default" />
             </actuators>
             <sensors>
-                <kilobot_communication implementation="default" medium="kilocomm" show_rays="false" />
+                <kilobot_communication implementation="default" medium="kilocomm" show_rays="true" />
             </sensors>
             <params behavior="build/examples/behaviors/complexity" />
         </kilobot_controller>
@@ -58,19 +58,19 @@
           <resource
             type="0"
             initial_population = "25"
-            eta="0.0005"
+            eta="0.005"
             k="25"
-            umin="0.5"
+            umin="0.2"
             exploitation="quadratic">
           </resource>
-         <!-- <resource -->
-         <!--    type="1" -->
-         <!--    initial_population = "15" -->
-         <!--    eta="0.005" -->
-         <!--    k="125" -->
-         <!--    umin="0.5" -->
-         <!--    exploitation="linear"> -->
-         <!--  </resource> -->
+          <resource
+              type="1"
+              initial_population = "25"
+              eta="0.005"
+              k="25"
+              umin="0.2"
+              exploitation="linear">
+          </resource>
        </environments>
     </loop_functions>
 
@@ -78,7 +78,7 @@
         <distribute>
           <position method="uniform" min="-0.95,-0.95,0" max="0.95,0.95,0" />
             <orientation method="uniform" min="0,0,0" max="360,0,0" />
-            <entity quantity="1" max_trials="100">
+            <entity quantity="25" max_trials="100">
                 <kilobot id="kb">
                     <controller config="listener"/> <dynamics2d friction="0.7" />
                 </kilobot>

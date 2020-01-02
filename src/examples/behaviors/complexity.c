@@ -31,9 +31,6 @@
 // MAX 3 RESOURCES
 #define RESOURCES_SIZE 3
 
-// rx message buffer
-#define BUFFER_SIZE 15
-
 /*-------------------------------------------------------------------*/
 /* General Variables                                                 */
 /*-------------------------------------------------------------------*/
@@ -125,8 +122,8 @@ uint8_t resources_umin[RESOURCES_SIZE]; // keep local knowledge about resources 
 /*-------------------------------------------------------------------*/
 uint32_t last_decision_ticks = 0;
 /* processes variables */
-const double k = 0.4;
-const double h = 0.4;
+const double k = 0.5;
+const double h = 0.5;
 /* explore for a bit, estimate the pop and then take a decision */
 uint32_t last_decision_tick = 0; /* when last decision was taken */
 uint32_t exploration_ticks = 250; /* take a decision only after exploring the environment */
@@ -146,8 +143,7 @@ uint8_t valid_until = 100;
 /* buffer for communications */
 /* used both for flooding protocol and for dm */
 node_t *b_head = NULL;
-/* buffer definitions storing information from other kbs */
-uint8_t buffer_iterator;
+/* count messages from smart arena */
 uint8_t messages_count;
 
 
@@ -313,7 +309,7 @@ void merge_scan(bool time_window_is_over) {
 
 
 void message_rx(message_t *msg, distance_measurement_t *d) {
-  /* get id (always firt byte) */
+  /* get id (always first byte) */
   uint8_t id = msg->data[0];
 
   if(msg->type==0 && id==kilo_uid) {
@@ -326,13 +322,10 @@ void message_rx(message_t *msg, distance_measurement_t *d) {
     // the smart arena type is where the kb is first byte of the payload
     // can be NONE (255) or resource id 0<id<254
     current_arena_state = (msg->data[1]); // get resource position
-    // update only if not committed or committed and not in area
-    // NOTE this works until the indexes for the two enums are ordered!!!
-    if(current_decision_state == 255 ||
-       (current_decision_state != 255 && current_decision_state != current_arena_state)) {
+    if(current_decision_state != 255) {
       resources_umin[current_arena_state] = (msg->data[2]); // get umin for the resource
-      merge_scan(false);
     }
+    merge_scan(false);
 
     // used to bias toward the center the random walk when too close to the border
     my_distance_from_center = ((double) msg->data[3])/100 ;
@@ -352,7 +345,6 @@ void message_rx(message_t *msg, distance_measurement_t *d) {
     ores0 = msg->data[3];
     ores1 = msg->data[4];
     ores2 = msg->data[5];
-
     for(uint8_t res_index=0; res_index<RESOURCES_SIZE; res_index++) {
       if(res_index == 0) {
         e_pop = estimate_population(ores0, ores1, ores2, msg_count);
@@ -382,9 +374,6 @@ void message_rx(message_t *msg, distance_measurement_t *d) {
       b_head->next = NULL;
       b_head->time_stamp = kilo_ticks;
       b_head->been_rebroadcasted = false;
-      // initialize buffer iterator
-      // to take count of messages stored
-      buffer_iterator = 1;
     } else {
       // check if it has been parsed before
       // avoid resending same messages over and over again
@@ -394,13 +383,7 @@ void message_rx(message_t *msg, distance_measurement_t *d) {
       }
 
       // message is new, store it
-      if(buffer_iterator > BUFFER_SIZE) {
-        // remove the first one to append the new one later
-        mtl_remove_first(&b_head);
-        buffer_iterator--;
-      }
       mtl_push_back(b_head, msg, kilo_ticks);
-      buffer_iterator++;
     }
 
     // UNCOMMENT IF NEEDED
@@ -478,12 +461,13 @@ void take_decision() {
     }
 
     // a random number to extract next decision
-    uint8_t extraction = rand_soft();
+    int extraction = rand_soft();
     // subtract commitments
     for(unsigned i=0; i<RESOURCES_SIZE; i++) {
       extraction -= processes[i];
       if(extraction <= 0) {
         current_decision_state = i;
+        return;
       }
     }
     // subtract recruitment
@@ -530,7 +514,7 @@ void take_decision() {
     }
 
     // a random number to extract next decision
-    uint8_t extraction = rand_soft();
+    int extraction = rand_soft();
     extraction -= (abandon+cross_inhibition);
     if(extraction <= 0) {
       current_decision_state = NOT_COMMITTED;
@@ -602,7 +586,7 @@ void setup() {
   set_motion(FORWARD);
   for(uint8_t i=0; i<RESOURCES_SIZE; i++) {
     resources_hits[i] = 0;
-    resources_pops[i] = 125;
+    resources_pops[i] = 0;
     resources_umin[i] = 0;
   }
 }
@@ -615,11 +599,22 @@ void loop() {
   // visual debug. Signal internal decision errors
   // if the kilobots blinks green and blue something was wrong
   while(internal_error) {
+    // somewhere over the rainbow....
+    set_color(RGB(3,0,0));
+    delay(500);
     set_color(RGB(0,3,0));
     delay(500);
     set_color(RGB(0,0,3));
     delay(500);
-  }
+    set_color(RGB(3,3,0));
+    delay(500);
+    set_color(RGB(3,0,3));
+    delay(500);
+    set_color(RGB(0,3,3));
+    delay(500);
+    set_color(RGB(3,3,3));
+    delay(500);
+    }
 
   /*
    * if
@@ -631,6 +626,7 @@ void loop() {
    *   rebroadcast messages
    */
   if(exploration_ticks <= kilo_ticks-last_decision_ticks) {
+
     // fill my message before resetting the hits
     // fill up message type. Type 1 used for kbs
     interactive_message.type = 1;
@@ -639,14 +635,12 @@ void loop() {
     // fill up the current states
     interactive_message.data[1] = current_decision_state;
     interactive_message.data[2] = current_arena_state;
-
     // share hits counts for all resources
     for(uint8_t res_index=0; res_index<RESOURCES_SIZE; res_index++) {
       interactive_message.data[3+res_index] = resources_hits[res_index];
     }
     // also send current message count since it is need for averaging
     interactive_message.data[3+RESOURCES_SIZE] = messages_count;
-
     // fill up the crc
     interactive_message.crc = message_crc(&interactive_message);
 
@@ -690,6 +684,7 @@ void loop() {
     }
   }
 
+  fflush(stdout);
   /* Now parse the decision and act accordingly */
   if(current_decision_state != NOT_COMMITTED) {
     // if over the wanted resource
@@ -708,6 +703,7 @@ void loop() {
     set_color(RGB(3,3,3));
     random_walk();
   }
+  fflush(stdout);
 }
 
 int main() {
