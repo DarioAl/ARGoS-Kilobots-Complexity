@@ -31,17 +31,10 @@ using namespace argos;
 class AreaALF {
  private:
   // enum for resource color
-  std::string enumColor[10] = {
+  std::string enumColor[3] = {
                                "green",
                                "red",
                                "orange",
-                               "yellow",
-                               "black",
-                               "magenta",
-                               "cyan",
-                               "brown",
-                               "purple",
-                               "blue",
   };
 
 
@@ -49,7 +42,7 @@ class AreaALF {
   /************************************/
   /* virtual environment visualization*/
   /************************************/
-  UInt8 type; // resource type REDAREA or GREENAREA
+  UInt8 type; // resource type
   UInt8 id; // area id
 
   CVector2 position; /* Center of the resource */

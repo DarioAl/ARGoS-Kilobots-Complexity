@@ -30,8 +30,6 @@ void ResourceALF::generate(const std::vector<AreaALF>& oth_areas, const Real are
   // the same spot
   std::vector<AreaALF> all_areas;
   all_areas.insert(all_areas.end(), oth_areas.begin(), oth_areas.end());
-  all_areas.insert(all_areas.end(), areas.begin(), areas.end());
-
   CVector2 pos;
   UInt16 tries = 0; // placement tries
   UInt16 maxTries = 9999; // max placement tries
@@ -39,12 +37,15 @@ void ResourceALF::generate(const std::vector<AreaALF>& oth_areas, const Real are
   for(UInt32 i=0; i<num_of_areas; ++i) {
     for(tries = 0; tries <= maxTries; tries++) {
       do {
+        // random distance dal centro
+        // random angle
+        // x = coseno angolo per raggio
+        // y = seno angolo per raggio
         Real rand_angle = r_rng->Uniform(CRange<Real>(-CRadians::PI.GetValue(), CRadians::PI.GetValue()));
-        Real rand_displacement_x = r_rng->Uniform(CRange<Real>(0, arena_radius-area_radius/2));
-        Real rand_displacement_y = r_rng->Uniform(CRange<Real>(0, arena_radius-area_radius/2));
+        Real rand_distance = r_rng->Uniform(CRange<Real>(0,arena_radius-area_radius/2));
 
-        pos = CVector2(rand_displacement_x*cos(rand_angle),
-                       rand_displacement_y*sin(rand_angle));
+        pos = CVector2(rand_distance*cos(rand_angle),
+                       rand_distance*sin(rand_angle));
       } while(SquareDistance(pos, CVector2(0,0)) > pow(2,arena_radius-area_radius));
 
       bool duplicate = false;
@@ -76,7 +77,7 @@ bool ResourceALF::doStep(const std::vector<CVector2>& kilobot_positions, const s
   // first update kilobots positions in the areas
   // compute only for those kilobots with the right state
   for(UInt8 i=0; i<kilobot_positions.size(); ++i) {
-    if(kilobot_states.at(i) == this->type &&\
+    if(kilobot_states.at(i) == this->type &&
        kilobot_colors.at(i) == CColor::GREEN) {
       for(AreaALF& area : areas) {
         if(SquareDistance(kilobot_positions.at(i), area.position) < pow(area_radius,2)) {
@@ -86,7 +87,6 @@ bool ResourceALF::doStep(const std::vector<CVector2>& kilobot_positions, const s
       }
     }
   }
-
   /* apply exploitation */
   // now call the doStep for every area and remove from the vector if pop is 0
   std::vector<AreaALF>::iterator it = areas.begin();
@@ -94,14 +94,16 @@ bool ResourceALF::doStep(const std::vector<CVector2>& kilobot_positions, const s
     if(it->doStep()) {
       it = areas.erase(it);
       population = areas.size();
-    } else {
-      // increment iterator
-      ++it;
     }
+    // avoid bad poiting
+    if(it == areas.end()) {
+      break;
+    }
+    // increment iterator
+    ++it;
   }
 
   /* apply growth */
-  // the logistic growth up bound for the population here is omitted and is 1
   population += (population)*eta*(1-population/k);
 
   /* regenerate area */

@@ -1,7 +1,6 @@
 /** @author Dario Albani */
 #include <stdlib.h>
 #include <stdio.h>
-#
 #include "message_t_list.h"
 #include <stdlib.h>
 

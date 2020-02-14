@@ -1,6 +1,7 @@
 #include "complexity_ALF.h"
 #include <argos3/plugins/robots/kilobot/control_interface/ci_kilobot_controller.h>
 
+#include <bitset>
 // Enable this part of the code to log the perceived utility estimation in the log file
 #define DISTRIBUTION_ESTIMATION
 #ifdef DISTRIBUTION_ESTIMATION
@@ -94,6 +95,7 @@ void CComplexityALF::SetupInitialKilobotStates() {
     /* Setup the virtual states of a kilobot(e.g. has food state)*/
     SetupInitialKilobotState(*m_tKilobotEntities[it]);
   }
+  std::cout << "exiting  setup initial kb s " << std::endl;
 }
 
 /****************************************/
@@ -107,10 +109,10 @@ void CComplexityALF::SetupInitialKilobotState(CKilobotEntity &c_kilobot_entity){
   m_vecLastTimeMessaged[unKilobotID] = -1000;
   /* Get a non-colliding random position within the circular arena */
   bool distant_enough = false;
-  Real rand_angle, rand_displacement_x, rand_displacement_y;
+  Real rand_angle, rand_distance;
   CVector3 rand_pos;
 
-  UInt16 maxTries = 999;
+  UInt16 maxTries = 9999;
   UInt16 tries = 0;
 
   /* Get a random orientation for the kilobot */
@@ -119,9 +121,8 @@ void CComplexityALF::SetupInitialKilobotState(CKilobotEntity &c_kilobot_entity){
   random_rotation.FromEulerAngles(rand_rot_angle, CRadians::ZERO, CRadians::ZERO);
   do {
     rand_angle = c_rng->Uniform(CRange<Real>(-CRadians::PI.GetValue(), CRadians::PI.GetValue()));
-    rand_displacement_x = c_rng->Uniform(CRange<Real>(0, circular_arena_radius));
-    rand_displacement_y = c_rng->Uniform(CRange<Real>(0, circular_arena_radius));
-    rand_pos = CVector3(rand_displacement_x*sin(rand_angle),rand_displacement_y*cos(rand_angle),0);
+    rand_distance = c_rng->Uniform(CRange<Real>(0, circular_arena_radius-0.015));
+    rand_pos = CVector3(rand_distance*cos(rand_angle),rand_distance*sin(rand_angle),0);
     distant_enough = MoveEntity(c_kilobot_entity.GetEmbodiedEntity(), rand_pos, random_rotation, false);
     if(tries == maxTries-1) {
       std::cerr << "ERROR: too many tries and not an available spot for the area" << std::endl;
@@ -195,6 +196,12 @@ void CComplexityALF::UpdateVirtualEnvironments() {
   for(ResourceALF& resource : resources) {
     resource.doStep(m_vecKilobotsPositions, m_vecKilobotStates, m_vecKilobotColors, areas, circular_arena_radius);
   }
+
+  // update the local areas array
+  areas.clear();
+  for(ResourceALF& resource : resources) {
+    areas.insert(areas.end(), resource.areas.begin(), resource.areas.end());
+  }
 }
 
 /***********************************************/
@@ -215,7 +222,6 @@ void CComplexityALF::UpdateKilobotStates(){
 void CComplexityALF::UpdateKilobotState(CKilobotEntity &c_kilobot_entity){
   // current kb id
   UInt16 unKilobotID = GetKilobotId(c_kilobot_entity);
-
 
   // update kb position
   m_vecKilobotsPositions[unKilobotID] = GetKilobotPosition(c_kilobot_entity);
@@ -244,8 +250,14 @@ void CComplexityALF::UpdateKilobotState(CKilobotEntity &c_kilobot_entity){
 /*******************************************/
 
 void CComplexityALF::UpdateVirtualSensor(CKilobotEntity &c_kilobot_entity){
-  // get kb id
-  UInt8 unKilobotID = (UInt8) GetKilobotId(c_kilobot_entity); // get kb id
+  /* Create ARK-type message variables addressing 3 kbs per message */
+  m_tALFKilobotMessage tkilobotMessage, tEmptyMessage, tMessage;
+
+  /* Flag for existance of message to send */
+  bool bMessageToSend = false;
+
+  /* Get the kilobot ID */
+  UInt16 unKilobotID = GetKilobotId(c_kilobot_entity);
 
   /* check if enough time has passed from the last message otherwise*/
   if(m_fTimeInSeconds - m_vecLastTimeMessaged[unKilobotID]< m_fMinTimeBetweenTwoMsg) {
@@ -253,31 +265,103 @@ void CComplexityALF::UpdateVirtualSensor(CKilobotEntity &c_kilobot_entity){
     return;
   } else {
     /* Prepare the inividual kilobot's message */
-    m_tMessages[unKilobotID].type = 0; // using type 0 to signal ark messages
-    /* Save time for next messages */
-    m_vecLastTimeMessaged[unKilobotID] = m_fTimeInSeconds;
+    /* see README.md to understand about ARK messaging */
+    /* data has 3x24 bits divided as                   */
+    /*  type 4b    ID 10b   data 10b     <- ARK msg    */
+    /*  data[0]   data[1]   data[2]      <- kb msg     */
+    /* xxxx xxxx xyyz zzzw wwww wwww     <- complexity */
+    /* x bits used for kilobot id                      */
+    /* y bits used for kilobot arena state             */
+    /* z bits used for resource umin                   */
+    /* w bits used for kilobot rotattion toward center */
 
-    /* Fill up the kb message */
-    m_tMessages[unKilobotID].data[0] = unKilobotID;
-    m_tMessages[unKilobotID].data[1] = m_vecKilobotStates[unKilobotID]; // the resource id
-    if(m_vecKilobotStates[unKilobotID] != 255) {
-      m_tMessages[unKilobotID].data[2] = resources.at(m_vecKilobotStates[unKilobotID]).umin;
+    // clena tkilobotMessage fields
+    tkilobotMessage.m_sType = 0;
+    tkilobotMessage.m_sID = 0;
+    tkilobotMessage.m_sData = 0;
+
+    // 9 bits used for the id of the kilobot store in the first 9 bits of the message
+    // hence 4 in the m_sType and 5 in the leftmost part of m_sID
+    tkilobotMessage.m_sType = (unKilobotID>>5);
+    tkilobotMessage.m_sID = unKilobotID << 5;
+
+    // 2 bits used for the kb state (over a resource?)
+    // this are store in the 6th and 7th bits of m_sID
+    // this is changed as following
+    // 0 no resource
+    // 1 resource 1
+    // 2 resource 2
+    // 3 resource 3
+    UInt8 kilobotState = m_vecKilobotStates[unKilobotID] + 1;
+    tkilobotMessage.m_sID = tkilobotMessage.m_sID | (kilobotState << 3);
+
+    // 4 bits used to store umin of current area (this can change dynamically)
+    // this are stored in the last thhree bits of m_sID and first of m_sData
+    if(kilobotState != 0) {
+      UInt8 rumin = resources.at(kilobotState-1).umin * 10;
+      tkilobotMessage.m_sID = tkilobotMessage.m_sID | (rumin >> 1);
     }
+
+    // 9 remaining bits of m_sData are used to store rotation toward the center
+    // i.e. if the kilobot is too close to the border then a rotation angle is sent
     CVector2 kb_position = GetKilobotPosition(c_kilobot_entity);
     Real pdistance = kb_position.Length()/circular_arena_radius;
-    CVector2 kb_orientation = CVector2(1,GetKilobotOrientation(c_kilobot_entity));
-    Real turning_angle = M_PI-acos(kb_orientation.Normalize().DotProduct(kb_position.Normalize()));
-    // 1 byte for r in percentage (0 in the center 100 at the border)
-    m_tMessages[unKilobotID].data[3] = (UInt8) (pdistance*100);
-    // 1 bytes for turning angle
-    m_tMessages[unKilobotID].data[4] = ((UInt8) (turning_angle)*10); // hi part of the uint16
+    if (pdistance > 0.92) {
+      CVector2 kb_orientation = CVector2(1,GetKilobotOrientation(c_kilobot_entity));
+      CRadians turning_angle(M_PI-acos(kb_orientation.Normalize().DotProduct(kb_position.Normalize())));
 
-    // UNCOMMENT IF NEEDED
-    // m_tMessages[unKilobotID].data[4] = (((UInt16) theta) >> 8); // hi part of the uint16
-    // m_tMessages[unKilobotID].data[5] = (((UInt16) theta) & 0xff); // lo part of the uint16
+      // only turn if turning angle greater than 45 degrees
+      if(abs(turning_angle.GetValue()) > M_PI/6) {
+        UInt8 angle_sign = turning_angle.GetValue()>0?1:-1;
+        UInt8 int_turning_angle = ToDegrees(turning_angle).GetValue();
+        tkilobotMessage.m_sData = tkilobotMessage.m_sData | angle_sign << 8 | int_turning_angle;
+      }
+    }
 
-    /* Sending the message using the overhead controller */
+    /*  Set the message sending flag to True */
+    bMessageToSend=true;
+    m_vecLastTimeMessaged[unKilobotID] = m_fTimeInSeconds;
+  }
+
+  /* Send the message to the kilobot using the ARK messaging protocol (addressing 3 kilobots msg)*/
+  if(bMessageToSend) {
+    for (int i = 0; i < 9; ++i) {
+      m_tMessages[unKilobotID].data[i] = 0;
+    }
+
+    // Prepare an empty ARK-type message to fill the gap in the full kilobot message
+    tEmptyMessage.m_sType = 0; // empty field
+    tEmptyMessage.m_sID = 1023; // invalid id
+    tEmptyMessage.m_sData = 0; // empty field
+
+    // Fill the kilobot message by the ARK-type messages
+    for (int i = 0; i < 3; ++i) {
+      if( i == 0){
+        tMessage = tkilobotMessage;
+      } else{
+        tMessage = tEmptyMessage;
+      }
+      // clean up m_tmessages for safety
+      m_tMessages[unKilobotID].data[i*3] = 0;
+      m_tMessages[unKilobotID].data[1+i*3] = 0;
+      m_tMessages[unKilobotID].data[2+i*3] = 0;
+      // fill it up
+      m_tMessages[unKilobotID].data[i*3] = tMessage.m_sType << 4 | tMessage.m_sID >> 6;
+      // std::cout << "msType " << std::bitset<4>(tkilobotMessage.m_sType) << std::endl;
+      // std::cout << "msID " << std::bitset<10>(tkilobotMessage.m_sID) << std::endl;
+      // std::cout << "data[0] " << std::bitset<8>(m_tMessages[unKilobotID].data[i*3])  << std::endl;
+      m_tMessages[unKilobotID].data[1+i*3] = tMessage.m_sID << 2 | tMessage.m_sData >> 8;
+      // std::cout << "msID " << std::bitset<10>(tkilobotMessage.m_sID) << std::endl;
+      // std::cout << "msData " << std::bitset<10>(tkilobotMessage.m_sData) << std::endl;
+      // std::cout << "data[1] " << std::bitset<8>(m_tMessages[unKilobotID].data[1+i*3])  << std::endl;
+      m_tMessages[unKilobotID].data[2+i*3] = tMessage.m_sData;
+      // std::cout << "msData " << std::bitset<10>(tkilobotMessage.m_sData) << std::endl;
+      // std::cout << "data[2] " << std::bitset<8>(m_tMessages[unKilobotID].data[2+i*3])  << std::endl;
+    }
+    /* Sending the message */
     GetSimulator().GetMedium<CKilobotCommunicationMedium>("kilocomm").SendOHCMessageTo(c_kilobot_entity,&m_tMessages[unKilobotID]);
+  } else{
+    GetSimulator().GetMedium<CKilobotCommunicationMedium>("kilocomm").SendOHCMessageTo(c_kilobot_entity,NULL);
   }
 }
 
@@ -298,7 +382,6 @@ void CComplexityALF::PostStep() {
   }
 
   /* Go through to get other debug info */
-  //TODO check why this does not work m_tKilobotEntities.size();
   UInt8 nkbs = (m_tKilobotEntities.size()>3?3:m_tKilobotEntities.size());
   for(size_t i=0; i<nkbs; ++i) {
     // sum up all

@@ -47,8 +47,7 @@ class ResourceALF {
 
   /************************************/
   /* area exploitation function       */
-  /************************************/
-  std::string exploitation; /* single area exploitation */
+  /************************************/ std::string exploitation; /* single area exploitation */
 
   /* constructor */
   inline ResourceALF() {

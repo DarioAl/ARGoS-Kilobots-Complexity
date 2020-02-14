@@ -15,7 +15,6 @@ class CSpace;
 class CFloorEntity;
 class CSimulator;
 }
-
 class CCI_KilobotController;
 
 #include <math.h>

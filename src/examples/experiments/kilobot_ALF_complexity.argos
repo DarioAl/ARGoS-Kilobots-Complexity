@@ -5,7 +5,7 @@
     <!-- * General configuration * -->
     <!-- ************************* -->
     <framework>
-        <system threads="8"/>
+        <system threads="6"/>
         <experiment length="1000"
         ticks_per_second="10"
         random_seed="2" />
@@ -58,7 +58,7 @@
           <resource
             type="0"
             initial_population = "25"
-            eta="0.005"
+            eta="0.00"
             k="25"
             umin="0.2"
             exploitation="quadratic">
@@ -66,7 +66,7 @@
           <resource
               type="1"
               initial_population = "25"
-              eta="0.005"
+              eta="0.00"
               k="25"
               umin="0.2"
               exploitation="linear">
