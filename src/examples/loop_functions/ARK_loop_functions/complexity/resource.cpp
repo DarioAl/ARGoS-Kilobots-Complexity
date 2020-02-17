@@ -37,10 +37,6 @@ void ResourceALF::generate(const std::vector<AreaALF>& oth_areas, const Real are
   for(UInt32 i=0; i<num_of_areas; ++i) {
     for(tries = 0; tries <= maxTries; tries++) {
       do {
-        // random distance dal centro
-        // random angle
-        // x = coseno angolo per raggio
-        // y = seno angolo per raggio
         Real rand_angle = r_rng->Uniform(CRange<Real>(-CRadians::PI.GetValue(), CRadians::PI.GetValue()));
         Real rand_distance = r_rng->Uniform(CRange<Real>(0,arena_radius-area_radius/2));
 

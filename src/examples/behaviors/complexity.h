@@ -1,9 +1,10 @@
 #ifndef COMPLEXITY_H
 #define COMPLEXITY_H
 
-#define DEBUG_KILOBOT
-
 #ifdef ARGOS_simulator_BUILD
+
+// this only works within ARGoS
+#define DEBUG_KILOBOT
 
 #ifdef __cplusplus /* If this is a C++ compiler, use C linkage */
 extern "C" {

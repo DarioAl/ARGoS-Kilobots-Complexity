@@ -17,7 +17,7 @@
  * @email dario.albani@istc.cnr.it
  */
 
-#include <kilolib.h>
+#include "kilolib.h"
 // do not change the order of includes here
 // used for debug with ARGoS simulator
 #include "complexity.h"
@@ -212,6 +212,9 @@ uint8_t estimate_population(uint8_t res, uint8_t ores1, uint8_t ores2, uint8_t m
 /* ------------------------------------- */
 
 void merge_scan(bool time_window_is_over) {
+  // iterator for cycles
+  uint8_t i;
+
   // only merge after a time window and if there are messages
   if(time_window_is_over) {
     if(messages_count == 0) {
@@ -225,14 +228,14 @@ void merge_scan(bool time_window_is_over) {
     /**** save DEBUG information ****/
     debug_info_set(num_messages, messages_count);
     uint8_t allres = 0;
-    for(uint8_t i=0; i<RESOURCES_SIZE; i++) {
+    for(i=0; i<RESOURCES_SIZE; i++) {
       allres += resources_hits[i];
     }
     debug_info_set(hits_empty, messages_count-allres);
     /********************************/
 #endif
 
-    for(uint8_t i=0; i<RESOURCES_SIZE; i++) {
+    for(i=0; i<RESOURCES_SIZE; i++) {
       if(i == 0) {
 #ifdef DEBUG_KILOBOT
         /**** save DEBUG information ****/
@@ -295,6 +298,9 @@ void merge_scan(bool time_window_is_over) {
 
 /* see next function for specification of what is done here */
 void parse_smart_arena_data(uint8_t data[9], uint8_t kb_position) {
+  // update message count
+  messages_count++;
+
   // index of first element in the data
   uint8_t shift = kb_position*3;
   // get arena state
@@ -338,30 +344,32 @@ void message_rx(message_t *msg, distance_measurement_t *d) {
     /* w bits used for kilobot rotattion toward center */
 
     // unpack message
+    bool message_received = false;
     // ids are first 9 bits
     int id1 = msg->data[0] << 1 | msg->data[1] >> 7;
     int id2 = msg->data[3] << 1 | msg->data[4] >> 7;
     int id3 = msg->data[6] << 1 | msg->data[7] >> 7;
 
-    if (id1 == kilo_uid) {
-      // update message count
-      messages_count++;
+    if(id1 == kilo_uid) {
       parse_smart_arena_data(msg->data, 0);
-    }
-    if (id2 == kilo_uid) {
-      // update message count
-      messages_count++;
+      message_received = true;
+    } else if(id2 == kilo_uid) {
       parse_smart_arena_data(msg->data, 1);
-    }
-    if (id3 == kilo_uid) {
-      // update message count
-      messages_count++;
+      message_received = true;
+    } else if (id3 == kilo_uid) {
       parse_smart_arena_data(msg->data, 2);
+      message_received = true;
     }
-    if(current_decision_state == 255 ||
-       (current_decision_state != 255 && current_decision_state != current_arena_state)) {
-      merge_scan(false);
+
+    // if received a message
+    if(message_received) {
+      // if uncommitted or committed and not working on area
+      // if the kilobot is working on an area we decide not to update his scans
+      if(current_decision_state == 255 || (current_decision_state != 255 && current_decision_state != current_arena_state)) {
+          merge_scan(false);
+      }
     }
+
   } else if(msg->type==1) {
     /* get id (always firt byte when coming from another kb) */
     uint8_t id = msg->data[0];
@@ -372,13 +380,17 @@ void message_rx(message_t *msg, distance_measurement_t *d) {
       /* KB interactive message            */
       /* ----------------------------------*/
 
+      // increase messages_count for average estimation
+      messages_count++;
+
       // check received message and merge info
       uint8_t e_pop, ores0, ores1, ores2, msg_count;
       msg_count = msg->data[6];
       ores0 = msg->data[3];
       ores1 = msg->data[4];
       ores2 = msg->data[5];
-      for(uint8_t res_index=0; res_index<RESOURCES_SIZE; res_index++) {
+      uint8_t res_index;
+      for(res_index=0; res_index<RESOURCES_SIZE; res_index++) {
         if(res_index == 0) {
           e_pop = estimate_population(ores0, ores1, ores2, msg_count);
         } else if(res_index == 1) {
@@ -450,6 +462,8 @@ void message_tx_success() {
 /*-------------------------------------------------------------------*/
 
 void take_decision() {
+  // iterator for cycles
+  uint8_t i;
   /* Start decision process */
   if(current_decision_state == NOT_COMMITTED) {
     uint8_t processes[RESOURCES_SIZE+1] = {0}; // store here all committment processes
@@ -459,7 +473,7 @@ void take_decision() {
     /****************************************************/
     uint16_t sum_committments = 0;
 
-    for(int i=0; i<RESOURCES_SIZE; i++) {
+    for(i=0; i<RESOURCES_SIZE; i++) {
       if(resources_pops[i] > resources_umin[i]) {
         // normalize between 0 and 255 according to k
         processes[i] = resources_pops[i]*h;
@@ -501,7 +515,7 @@ void take_decision() {
     // a random number to extract next decision
     int extraction = rand_soft();
     // subtract commitments
-    for(unsigned i=0; i<RESOURCES_SIZE; i++) {
+    for(i=0; i<RESOURCES_SIZE; i++) {
       extraction -= processes[i];
       if(extraction <= 0) {
         current_decision_state = i;
@@ -635,7 +649,8 @@ void setup() {
   set_color(RGB(3,3,3));
   /* Initialise motion variables */
   set_motion(FORWARD);
-  for(uint8_t i=0; i<RESOURCES_SIZE; i++) {
+  uint8_t i;
+  for(i=0; i<RESOURCES_SIZE; i++) {
     resources_hits[i] = 0;
     resources_pops[i] = 0;
     resources_umin[i] = 0;
@@ -687,7 +702,8 @@ void loop() {
     interactive_message.data[1] = current_decision_state;
     interactive_message.data[2] = current_arena_state;
     // share hits counts for all resources
-    for(uint8_t res_index=0; res_index<RESOURCES_SIZE; res_index++) {
+    uint8_t res_index;
+    for(res_index=0; res_index<RESOURCES_SIZE; res_index++) {
       interactive_message.data[3+res_index] = resources_hits[res_index];
     }
     // also send current message count since it is need for averaging

@@ -300,6 +300,7 @@ void CComplexityALF::UpdateVirtualSensor(CKilobotEntity &c_kilobot_entity){
     if(kilobotState != 0) {
       UInt8 rumin = resources.at(kilobotState-1).umin * 10;
       tkilobotMessage.m_sID = tkilobotMessage.m_sID | (rumin >> 1);
+      tkilobotMessage.m_sData = rumin << 9;
     }
 
     // 9 remaining bits of m_sData are used to store rotation toward the center
