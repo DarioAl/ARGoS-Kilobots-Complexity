@@ -3,7 +3,7 @@
  * that can be used to simulated several communications protocols
  */
 
-#include <kilolib.h>
+#include "kilolib.h"
 
 typedef struct msg_node {
   struct msg_node* next;    // the next node in the list

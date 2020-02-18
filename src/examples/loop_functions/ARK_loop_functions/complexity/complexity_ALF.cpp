@@ -264,10 +264,15 @@ void CComplexityALF::UpdateVirtualSensor(CKilobotEntity &c_kilobot_entity){
     // if the time is too short, the kilobot cannot receive a message
     return;
   } else {
-    /* Prepare the inividual kilobot's message */
+    // !!! THE FOLLOWING IS OF EXTREME IMPORTANCE !!!
+    // NOTE although the message is defined as type, id and data, in ARK the fields type and id are swapped
+    // resulting in a mixed message. If you are not using the whole field this could lead to problems.
+    // To avoid it, consider to concatenate the message as ID, type and data.
+
+    /* Prepare the inividual kilobot's message         */
     /* see README.md to understand about ARK messaging */
     /* data has 3x24 bits divided as                   */
-    /*  type 4b    ID 10b   data 10b     <- ARK msg    */
+    /*   ID 10b    type 4b  data 10b     <- ARK msg    */
     /*  data[0]   data[1]   data[2]      <- kb msg     */
     /* xxxx xxxx xyyz zzzw wwww wwww     <- complexity */
     /* x bits used for kilobot id                      */
@@ -276,30 +281,27 @@ void CComplexityALF::UpdateVirtualSensor(CKilobotEntity &c_kilobot_entity){
     /* w bits used for kilobot rotattion toward center */
 
     // clena tkilobotMessage fields
-    tkilobotMessage.m_sType = 0;
     tkilobotMessage.m_sID = 0;
+    tkilobotMessage.m_sType = 0;
     tkilobotMessage.m_sData = 0;
 
     // 9 bits used for the id of the kilobot store in the first 9 bits of the message
-    // hence 4 in the m_sType and 5 in the leftmost part of m_sID
-    tkilobotMessage.m_sType = (unKilobotID>>5);
-    tkilobotMessage.m_sID = unKilobotID << 5;
+    tkilobotMessage.m_sID = unKilobotID << 1;
 
     // 2 bits used for the kb state (over a resource?)
-    // this are store in the 6th and 7th bits of m_sID
     // this is changed as following
     // 0 no resource
     // 1 resource 1
     // 2 resource 2
     // 3 resource 3
     UInt8 kilobotState = m_vecKilobotStates[unKilobotID] + 1;
-    tkilobotMessage.m_sID = tkilobotMessage.m_sID | (kilobotState << 3);
+    tkilobotMessage.m_sID = tkilobotMessage.m_sID | (kilobotState >> 1);
+    tkilobotMessage.m_sType = (kilobotState &0x01) << 3;
 
     // 4 bits used to store umin of current area (this can change dynamically)
-    // this are stored in the last thhree bits of m_sID and first of m_sData
-    if(kilobotState != 0) {
+    if(kilobotState != 0) { // i.e. 255 in local kilobots_state list
       UInt8 rumin = resources.at(kilobotState-1).umin * 10;
-      tkilobotMessage.m_sID = tkilobotMessage.m_sID | (rumin >> 1);
+      tkilobotMessage.m_sType = tkilobotMessage.m_sType | (rumin >> 1);
       tkilobotMessage.m_sData = rumin << 9;
     }
 
@@ -313,9 +315,9 @@ void CComplexityALF::UpdateVirtualSensor(CKilobotEntity &c_kilobot_entity){
 
       // only turn if turning angle greater than 45 degrees
       if(abs(turning_angle.GetValue()) > M_PI/6) {
-        UInt8 angle_sign = turning_angle.GetValue()>0?1:-1;
+        UInt16 angle_sign = turning_angle.GetValue()>0?1:-1;
         UInt8 int_turning_angle = ToDegrees(turning_angle).GetValue();
-        tkilobotMessage.m_sData = tkilobotMessage.m_sData | angle_sign << 8 | int_turning_angle;
+        tkilobotMessage.m_sData = tkilobotMessage.m_sData | (angle_sign << 8) | int_turning_angle;
       }
     }
 
@@ -331,8 +333,9 @@ void CComplexityALF::UpdateVirtualSensor(CKilobotEntity &c_kilobot_entity){
     }
 
     // Prepare an empty ARK-type message to fill the gap in the full kilobot message
+
+    tEmptyMessage.m_sID = 511; // invalid id
     tEmptyMessage.m_sType = 0; // empty field
-    tEmptyMessage.m_sID = 1023; // invalid id
     tEmptyMessage.m_sData = 0; // empty field
 
     // Fill the kilobot message by the ARK-type messages
@@ -347,17 +350,20 @@ void CComplexityALF::UpdateVirtualSensor(CKilobotEntity &c_kilobot_entity){
       m_tMessages[unKilobotID].data[1+i*3] = 0;
       m_tMessages[unKilobotID].data[2+i*3] = 0;
       // fill it up
-      m_tMessages[unKilobotID].data[i*3] = tMessage.m_sType << 4 | tMessage.m_sID >> 6;
-      // std::cout << "msType " << std::bitset<4>(tkilobotMessage.m_sType) << std::endl;
-      // std::cout << "msID " << std::bitset<10>(tkilobotMessage.m_sID) << std::endl;
-      // std::cout << "data[0] " << std::bitset<8>(m_tMessages[unKilobotID].data[i*3])  << std::endl;
-      m_tMessages[unKilobotID].data[1+i*3] = tMessage.m_sID << 2 | tMessage.m_sData >> 8;
-      // std::cout << "msID " << std::bitset<10>(tkilobotMessage.m_sID) << std::endl;
-      // std::cout << "msData " << std::bitset<10>(tkilobotMessage.m_sData) << std::endl;
-      // std::cout << "data[1] " << std::bitset<8>(m_tMessages[unKilobotID].data[1+i*3])  << std::endl;
+      m_tMessages[unKilobotID].data[i*3] = (tMessage.m_sID >> 2);
+      m_tMessages[unKilobotID].data[1+i*3] = (tMessage.m_sID << 6);
+      m_tMessages[unKilobotID].data[1+i*3] = m_tMessages[unKilobotID].data[1+i*3] | (tMessage.m_sType << 2);
+      m_tMessages[unKilobotID].data[1+i*3] = m_tMessages[unKilobotID].data[1+i*3] | (tMessage.m_sData >> 8);
       m_tMessages[unKilobotID].data[2+i*3] = tMessage.m_sData;
-      // std::cout << "msData " << std::bitset<10>(tkilobotMessage.m_sData) << std::endl;
-      // std::cout << "data[2] " << std::bitset<8>(m_tMessages[unKilobotID].data[2+i*3])  << std::endl;
+      if(i==0){
+      std::cout << "msID " << std::bitset<10>(tkilobotMessage.m_sID) << std::endl;
+      std::cout << "msType " << std::bitset<4>(tkilobotMessage.m_sType) << std::endl;
+      std::cout << "msData " << std::bitset<10>(tkilobotMessage.m_sData) << std::endl;
+      std::cout << "data[0] " << std::bitset<8>(m_tMessages[unKilobotID].data[i*3]) << std::endl;
+      std::cout << "data[1] " << std::bitset<8>(m_tMessages[unKilobotID].data[1+i*3]) << std::endl;
+      std::cout << "data[2] " << std::bitset<8>(m_tMessages[unKilobotID].data[2+i*3]) << std::endl;
+      std::cout << "\n" << std::endl;
+      }
     }
     /* Sending the message */
     GetSimulator().GetMedium<CKilobotCommunicationMedium>("kilocomm").SendOHCMessageTo(c_kilobot_entity,&m_tMessages[unKilobotID]);
