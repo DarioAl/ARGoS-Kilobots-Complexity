@@ -13,6 +13,8 @@
  * - committed and looking for the resource - actively looking for a region cotaining the resource (RED LED)
  * - committed and working - working over the are and exploiting the resource. In this phase the kilobot stands still (GREEN LED)
  *
+ * NOTE increase all ticks by a factor of 10 when dealing with real simulations
+ *
  * @author Dario Albani
  * @email dario.albani@istc.cnr.it
  */
@@ -108,8 +110,8 @@ uint8_t resources_umin[RESOURCES_SIZE]; // keep local knowledge about resources 
 /*-------------------------------------------------------------------*/
 uint32_t last_decision_ticks = 0;
 /* processes variables */
-const double k = 0.4; // determines the spontaneous (i.e. based on own information) processes weight
-const double h = 0.4; // determines the interactive (i.e. kilobot-kilobot) processes weight
+const double k = 0.5; // determines the interactive (i.e. kilobot-kilobot) processes weight
+const double h = 0.5; // determines the spontaneous (i.e. based on own information) processes weight
 /* explore for a bit, estimate the pop and then take a decision */
 uint32_t last_decision_tick = 0; /* when last decision was taken */
 uint32_t exploration_ticks = 250; /* take a decision only after exploring the environment */
