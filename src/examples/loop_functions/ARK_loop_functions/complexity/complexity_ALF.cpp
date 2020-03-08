@@ -356,13 +356,13 @@ void CComplexityALF::UpdateVirtualSensor(CKilobotEntity &c_kilobot_entity){
       m_tMessages[unKilobotID].data[1+i*3] = m_tMessages[unKilobotID].data[1+i*3] | (tMessage.m_sData >> 8);
       m_tMessages[unKilobotID].data[2+i*3] = tMessage.m_sData;
       if(i==0){
-      std::cout << "msID " << std::bitset<10>(tkilobotMessage.m_sID) << std::endl;
-      std::cout << "msType " << std::bitset<4>(tkilobotMessage.m_sType) << std::endl;
-      std::cout << "msData " << std::bitset<10>(tkilobotMessage.m_sData) << std::endl;
-      std::cout << "data[0] " << std::bitset<8>(m_tMessages[unKilobotID].data[i*3]) << std::endl;
-      std::cout << "data[1] " << std::bitset<8>(m_tMessages[unKilobotID].data[1+i*3]) << std::endl;
-      std::cout << "data[2] " << std::bitset<8>(m_tMessages[unKilobotID].data[2+i*3]) << std::endl;
-      std::cout << "\n" << std::endl;
+      // std::cout << "msID " << std::bitset<10>(tkilobotMessage.m_sID) << std::endl;
+      // std::cout << "msType " << std::bitset<4>(tkilobotMessage.m_sType) << std::endl;
+      // std::cout << "msData " << std::bitset<10>(tkilobotMessage.m_sData) << std::endl;
+      // std::cout << "data[0] " << std::bitset<8>(m_tMessages[unKilobotID].data[i*3]) << std::endl;
+      // std::cout << "data[1] " << std::bitset<8>(m_tMessages[unKilobotID].data[1+i*3]) << std::endl;
+      // std::cout << "data[2] " << std::bitset<8>(m_tMessages[unKilobotID].data[2+i*3]) << std::endl;
+      // std::cout << "\n" << std::endl;
       }
     }
     /* Sending the message */
@@ -388,7 +388,7 @@ void CComplexityALF::PostStep() {
     overall_distance += SquareDistance(GetKilobotPosition(*m_tKilobotEntities[it]), CVector2(0,0));
   }
 
-  /* Go through to get other debug info */
+  /* Go through kilobots to get other debug info */
   UInt8 nkbs = (m_tKilobotEntities.size()>3?3:m_tKilobotEntities.size());
   for(size_t i=0; i<nkbs; ++i) {
     // sum up all

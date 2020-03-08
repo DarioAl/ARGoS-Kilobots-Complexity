@@ -1,3 +1,12 @@
+// TODO considera di non usare il flooding in reale oppure fallo in quei due secondi
+// usa #ifdef ARGOS_simulator_BUILD
+// ogni tanto fa un broadcast che dice ai kbs di iniziare a parlare (delay nel mandare il messaggio su kb)
+// ark dice di parlare e nel momento in cui dicono smetti di parlare cambia anche stato e fai decisione
+// 18+2
+// controlla che il messaggio sia stato mandato tx_succes
+// leva i float
+// togli umin togli angolo e contatta 4 kbs
+
 /*
  * Kilobot control software for a decision making simulation over different resources.
  *
@@ -60,9 +69,9 @@ typedef enum {
 motion_t current_motion_type = FORWARD;
 
 /* counters for motion, turning and random_walk */
-const double std_motion_steps = 5*16;
-const double levy_exponent = 2; // 2 is brownian like motion
-const double  crw_exponent = 0.0; // higher more straight
+const float std_motion_steps = 5*16;
+const float levy_exponent = 2; // 2 is brownian like motion
+const float  crw_exponent = 0.0; // higher more straight
 uint32_t turning_ticks = 0; // keep count of ticks of turning
 const uint8_t max_turning_ticks = 80; /* constant to allow a maximum rotation of 180 degrees with \omega=\pi/5 */
 unsigned int straight_ticks = 0; // keep count of ticks of going straight
@@ -70,7 +79,7 @@ const uint16_t max_straight_ticks = 320;
 uint32_t last_motion_ticks = 0;
 
 // the kb is biased toward the center when close to the border
-double rotation_to_center = 0; // if not 0 rotate toward the center (use to avoid being stuck)
+float rotation_to_center = 0; // if not 0 rotate toward the center (use to avoid being stuck)
 
 /*-------------------------------------------------------------------*/
 /* Smart Arena Variables                                             */
@@ -99,7 +108,7 @@ decision_t current_decision_state = NOT_COMMITTED;
 bool internal_error = false;
 
 /* Exponential Moving Average alpha */
-const double ema_alpha = 0.75;
+const float ema_alpha = 0.75;
 /* Variables for Smart Arena messages */
 uint8_t resources_hits[RESOURCES_SIZE]; // number of hits for each resource, to be compute by mean of an exp avg
 uint8_t resources_pops[RESOURCES_SIZE]; // keep local knowledge about resources
@@ -110,8 +119,8 @@ uint8_t resources_umin[RESOURCES_SIZE]; // keep local knowledge about resources 
 /*-------------------------------------------------------------------*/
 uint32_t last_decision_ticks = 0;
 /* processes variables */
-const double k = 0.5; // determines the interactive (i.e. kilobot-kilobot) processes weight
-const double h = 0.5; // determines the spontaneous (i.e. based on own information) processes weight
+const float k = 0.5; // determines the interactive (i.e. kilobot-kilobot) processes weight
+const float h = 0.5; // determines the spontaneous (i.e. based on own information) processes weight
 /* explore for a bit, estimate the pop and then take a decision */
 uint32_t last_decision_tick = 0; /* when last decision was taken */
 uint32_t exploration_ticks = 250; /* take a decision only after exploring the environment */
@@ -198,9 +207,9 @@ uint8_t estimate_population(uint8_t res, uint8_t ores1, uint8_t ores2, uint8_t m
   /* hits_i/(hits_i+hits_empty) * (1-(hits_otherResources/all_hits)) */
   // Avoid computing if estimated_pop should be 255
   if(res != msg_count) {
-    double no_ores = res+(msg_count-res+ores1+ores2);
-    double all_ores = ores1+ores2;
-    return  (uint8_t) (255*((double)res/no_ores) * (1-(all_ores/(double)msg_count)));
+    float no_ores = res+(msg_count-res+ores1+ores2);
+    float all_ores = ores1+ores2;
+    return  (uint8_t) (255*((float)res/no_ores) * (1-(all_ores/(float)msg_count)));
   } else {
     return 255;
   }
@@ -322,7 +331,7 @@ void parse_smart_arena_data(uint8_t data[9], uint8_t kb_position) {
   // get rotation toward the center (if far from center)
   int _rotationsign = (data[1+shift] &0x01);
   int _rotation = data[2+shift];
-  rotation_to_center = ((double)_rotation*M_PI)/180.0;
+  rotation_to_center = ((float)_rotation*M_PI)/180.0;
   if(_rotationsign == 1) {
     rotation_to_center = -1 * rotation_to_center;
   }
@@ -344,6 +353,7 @@ void message_rx(message_t *msg, distance_measurement_t *d) {
     /* y bits used for kilobot arena state             */
     /* z bits used for resource umin                   */
     /* w bits used for kilobot rotattion toward center */
+
 
     // unpack message
     bool message_received = false;
@@ -599,7 +609,7 @@ void random_walk(){
   case FORWARD:
     /* if moved forward for enough time turn */
     if(kilo_ticks > last_motion_ticks + straight_ticks) {
-      double angle = 0; // rotation angle
+      float angle = 0; // rotation angle
 
       /* if the smart arena signals a rotation angle then rotate */
       if(rotation_to_center != 0) {
@@ -682,7 +692,8 @@ void loop() {
     delay(500);
     set_color(RGB(3,3,3));
     delay(500);
-    }
+  }
+
 
   /*
    * if
@@ -753,24 +764,36 @@ void loop() {
     }
   }
 
-  /* Now parse the decision and act accordingly */
-  if(current_decision_state != NOT_COMMITTED) {
-    // if over the wanted resource
-    if(current_decision_state == current_arena_state) {
-      // turn or green led if status is committed and over the area
-      set_color(RGB(0,3,0));
-      // stop and exploit the area
-      set_motion(STOP);
-    } else {
-      // turn on red led if status is committed but still loking for the area
-      set_color(RGB(3,0,0));
-      random_walk(); // looking for the wanted resource
-    }
+  current_decision_state = COMMITTED_AREA_0;
+  if(current_decision_state == current_arena_state) {
+    // turn or green led if status is committed and over the area
+    set_color(RGB(0,3,0));
+    // stop and exploit the area
+    set_motion(STOP);
   } else {
-    // simply continue as uncommitted and explore
-    set_color(RGB(3,3,3));
-    random_walk();
+    // turn on red led if status is committed but still loking for the area
+    set_color(RGB(3,0,0));
+    random_walk(); // looking for the wanted resource
   }
+
+  /* /\* Now parse the decision and act accordingly *\/ */
+  /* if(current_decision_state != NOT_COMMITTED) { */
+  /*   // if over the wanted resource */
+  /*   if(current_decision_state == current_arena_state) { */
+  /*     // turn or green led if status is committed and over the area */
+  /*     set_color(RGB(0,3,0)); */
+  /*     // stop and exploit the area */
+  /*     set_motion(STOP); */
+  /*   } else { */
+  /*     // turn on red led if status is committed but still loking for the area */
+  /*     set_color(RGB(3,0,0)); */
+  /*     random_walk(); // looking for the wanted resource */
+  /*   } */
+  /* } else { */
+  /*   // simply continue as uncommitted and explore */
+  /*   set_color(RGB(3,3,3)); */
+  /*   random_walk(); */
+  /* } */
 }
 
 int main() {

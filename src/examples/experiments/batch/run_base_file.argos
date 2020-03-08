@@ -6,7 +6,7 @@
     <!-- ************************* -->
     <framework>
         <system threads="6" />
-        <experiment length="1200"
+        <experiment length="1500"
         ticks_per_second="10"
         random_seed="__SEED__" />
     </framework>
@@ -68,8 +68,8 @@
             initial_population = "25"
             eta = "0.00__ETA__"
             k="__AREAS__"
-            umin="0.5"
-            exploitation="quadratic">
+            umin="0.0"
+            exploitation="cubic">
           </resource>
           <!-- <resource -->
           <!--   type="1" -->

@@ -1,6 +1,6 @@
 #include "resource.h"
 
-ResourceALF::ResourceALF(UInt8 type, TConfigurationNode& t_tree) : type(type), area_radius(0.035) {
+ResourceALF::ResourceALF(UInt8 type, TConfigurationNode& t_tree) : type(type), area_radius(0.07) {
   /* Get the virtual environments node from the .argos file */
   TConfigurationNode& tVirtualEnvironmentsNode = GetNode(t_tree, "environments");
   TConfigurationNodeIterator itNodes;
@@ -62,7 +62,7 @@ void ResourceALF::generate(const std::vector<AreaALF>& oth_areas, const Real are
 
       // too many tries and no valid spot
       if(tries >= maxTries-1) {
-        std::cerr << "ERROR: too many tries and not an available spot for the area" << std::endl;
+        std::cerr << "\n \n ERROR: too many tries and not an available spot for the area" << std::endl;
         exit(-1);
       }
     }

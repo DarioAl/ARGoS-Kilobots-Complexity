@@ -26,7 +26,7 @@
 using namespace argos;
 
 // base population for every area
-#define BASE_POP 50
+#define BASE_POP 500
 
 class AreaALF {
  private:
