@@ -11,7 +11,7 @@ CIDQTUserFunctions::CIDQTUserFunctions() {
 /****************************************/
 
 void CIDQTUserFunctions::Draw(CKilobotEntity& c_entity) {
-   DrawText(CVector3(0.0, 0.0, 0.3),   // position
+   DrawText(CVector3(0.0, 0.0, 0.1),   // position
             c_entity.GetId().c_str()); // text
 }
 

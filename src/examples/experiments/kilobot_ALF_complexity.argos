@@ -51,17 +51,20 @@
         </variables>
 
         <environments>
-          <!-- for the population the cap is always 1     -->
-          <!-- eta is the area growth rate                -->
-          <!-- k is a discretized k i.e. number of areas  -->
-          <!-- umin is the lower population threshold     -->
+          <!-- for the population the cap is always 1 for area             -->
+          <!-- eta is the area growth rate, the same for every area        -->
+          <!-- k is a discretized k i.e. number of areas for the resource  -->
+          <!-- initial_population is an  area initial population           -->
+          <!-- lambda is the exploitation coefficient for the area         -->
+          <!-- exploitation is the exploitation type for the area          -->
           <resource
             type="0"
-            initial_population = "25"
-            eta="0.00"
-            k="25"
-            umin="0.0"
-            exploitation="quadratic">
+            initial_population = "1"
+            eta="0.000"
+            radius="0.1"
+            k="12"
+            lambda="0.001"
+            exploitation="cubic">
           </resource>
           <!-- <resource -->
           <!--     type="1" -->
@@ -87,7 +90,7 @@
 
         <floor id="floor"
         source="loop_functions"
-        pixels_per_meter="50" />
+        pixels_per_meter="250" />
     </arena>
 
     <!-- ******************* -->

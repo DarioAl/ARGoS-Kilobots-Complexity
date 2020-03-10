@@ -1,6 +1,6 @@
 #include "resource.h"
 
-ResourceALF::ResourceALF(UInt8 type, TConfigurationNode& t_tree) : type(type), area_radius(0.07) {
+ResourceALF::ResourceALF(UInt8 type, TConfigurationNode& t_tree) : type(type) {
   /* Get the virtual environments node from the .argos file */
   TConfigurationNode& tVirtualEnvironmentsNode = GetNode(t_tree, "environments");
   TConfigurationNodeIterator itNodes;
@@ -11,18 +11,29 @@ ResourceALF::ResourceALF(UInt8 type, TConfigurationNode& t_tree) : type(type), a
   for(itNodes=itNodes.begin(&tVirtualEnvironmentsNode); itNodes!=itNodes.end(); ++itNodes) {
     GetNodeAttribute(*itNodes, "type", tType);
     if(tType == type) {
-      // initial population
+      /* Read the parameters from the argos file */
+      // there are k areas (k is the same as the logistic growth)
+      GetNodeAttribute(*itNodes, "k", this->k);
+      // initial population for every single area, overall pop is initial_population*k
       GetNodeAttribute(*itNodes, "initial_population", this->population);
-      // growth parameters
-      GetNodeAttribute(*itNodes, "k", this->k  );
+      // area radius
+      GetNodeAttribute(*itNodes, "radius", this->area_radius);
+      // area growth rate (logistic growth)
       GetNodeAttribute(*itNodes, "eta", this->eta);
-      GetNodeAttribute(*itNodes, "umin", this->umin);
+      // exploitation parameter
+      GetNodeAttribute(*itNodes, "lambda", this->lambda);
+      // type of exploitation
       GetNodeAttribute(*itNodes, "exploitation", this->exploitation);
+
       // areas of the resource
       this->areas.reserve(k);
     }
     r_rng = CRandom::CreateRNG("argos");
   }
+}
+
+void ResourceALF::generate(const std::vector<AreaALF>& oth_areas, const Real arena_radius) {
+  generate(oth_areas, arena_radius, this->k);
 }
 
 void ResourceALF::generate(const std::vector<AreaALF>& oth_areas, const Real arena_radius, uint num_of_areas) {
@@ -34,6 +45,11 @@ void ResourceALF::generate(const std::vector<AreaALF>& oth_areas, const Real are
   UInt16 tries = 0; // placement tries
   UInt16 maxTries = 9999; // max placement tries
 
+  // temp variabl to initialize the resources
+  Real initial_population = this->population;
+  // reset population value (this was a placeholder until now)
+  this->population = 0;
+
   for(UInt32 i=0; i<num_of_areas; ++i) {
     for(tries = 0; tries <= maxTries; tries++) {
       do {
@@ -42,7 +58,7 @@ void ResourceALF::generate(const std::vector<AreaALF>& oth_areas, const Real are
 
         pos = CVector2(rand_distance*cos(rand_angle),
                        rand_distance*sin(rand_angle));
-      } while(SquareDistance(pos, CVector2(0,0)) > pow(2,arena_radius-area_radius));
+      } while(SquareDistance(pos, CVector2(0,0)) > pow(arena_radius-area_radius, 2));
 
       bool duplicate = false;
       for(const AreaALF& an_area : all_areas) {
@@ -52,11 +68,13 @@ void ResourceALF::generate(const std::vector<AreaALF>& oth_areas, const Real are
       }
 
       if(!duplicate) {
-        AreaALF new_area(type, seq_areas_id, pos, area_radius, exploitation);
-        seq_areas_id++;
-        // add to the current areas
+        AreaALF new_area(type, pos, area_radius, initial_population, lambda, eta);
+        // add to the areas
         all_areas.push_back(new_area); // used to avoid duplicates
         areas.push_back(new_area);
+        // add area utility to this->population
+        this->population += new_area.population;
+        // break the cycle and keep going with next area
         break;
       }
 
@@ -72,6 +90,7 @@ void ResourceALF::generate(const std::vector<AreaALF>& oth_areas, const Real are
 bool ResourceALF::doStep(const std::vector<CVector2>& kilobot_positions, const std::vector<UInt8> kilobot_states, const std::vector<CColor> kilobot_colors, const std::vector<AreaALF>& oth_areas, const Real arena_radius) {
   // first update kilobots positions in the areas
   // compute only for those kilobots with the right state
+  // i.e. with the green led on
   for(UInt8 i=0; i<kilobot_positions.size(); ++i) {
     if(kilobot_states.at(i) == this->type &&
        kilobot_colors.at(i) == CColor::GREEN) {
@@ -83,32 +102,22 @@ bool ResourceALF::doStep(const std::vector<CVector2>& kilobot_positions, const s
       }
     }
   }
-  /* apply exploitation */
-  // now call the doStep for every area and remove from the vector if pop is 0
-  std::vector<AreaALF>::iterator it = areas.begin();
-  while(it != areas.end()) {
-    if(it->doStep()) {
-      it = areas.erase(it);
-      population = areas.size();
+
+  /* apply exploitation and growth in all areas */
+  // reset population
+  population = 0;
+  // call the doStep of every area and get the population
+  for(AreaALF& area : areas) {
+    // do one step and sum up to resource pop
+    area.doStep(exploitation);
+    population += area.population;
+
+    if(area.population==0) {
+      std::cerr << "\n \n WARNING: an area has reached zero population" << std::endl;
     }
-    // avoid bad poiting
-    if(it == areas.end()) {
-      break;
-    }
-    // increment iterator
-    ++it;
+
+    area.kilobots_in_area = 0;
   }
 
-  /* apply growth */
-  population += (population)*eta*(1-population/k);
-
-  /* regenerate area */
-  // check how many areas we have to generate now
-  UInt8 diff = floor(population) - areas.size();
-  if(diff>0) {
-    this->generate(oth_areas, arena_radius, diff);
-  }
-
-  // umin is expressed in percentage
-  return population < population*umin;
+  return population == 0;
 }

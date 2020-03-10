@@ -4,15 +4,13 @@
 // ark dice di parlare e nel momento in cui dicono smetti di parlare cambia anche stato e fai decisione
 // 18+2
 // controlla che il messaggio sia stato mandato tx_succes
-// leva i float
-// togli umin togli angolo e contatta 4 kbs
 
 /*
  * Kilobot control software for a decision making simulation over different resources.
  *
  * Explanation about the code:
  * The kilobots are expected to exploit a set of resources displaced over the arena.
- * The kilobots are equipped (this is a simulated sensor) witth a sensor that allows them to sense the region of the arena
+ * The kilobots are equipped (this is a simulated sensor) with a sensor that allows them to sense the region of the arena
  * directly beneath.
  * The kilobots can only estimate the overall resources statuses and to do so they use and exponential moving average
  * computed over time and on multiple scans.
@@ -109,18 +107,20 @@ bool internal_error = false;
 
 /* Exponential Moving Average alpha */
 const float ema_alpha = 0.75;
+/* Umin threshold for the kb in 255/16 splice */
+uint8_t umin = 255/10;
+
 /* Variables for Smart Arena messages */
-uint8_t resources_hits[RESOURCES_SIZE]; // number of hits for each resource, to be compute by mean of an exp avg
+uint8_t temp_resource_pops[RESOURCES_SIZE]; // temporary local knowledge about resources
 uint8_t resources_pops[RESOURCES_SIZE]; // keep local knowledge about resources
-uint8_t resources_umin[RESOURCES_SIZE]; // keep local knowledge about resources umin
 
 /*-------------------------------------------------------------------*/
 /* Decision Making                                                   */
 /*-------------------------------------------------------------------*/
 uint32_t last_decision_ticks = 0;
 /* processes variables */
-const float k = 0.5; // determines the interactive (i.e. kilobot-kilobot) processes weight
-const float h = 0.5; // determines the spontaneous (i.e. based on own information) processes weight
+const float k = 0.0; // determines the interactive (i.e. kilobot-kilobot) processes weight
+const float h = 1.0; // determines the spontaneous (i.e. based on own information) processes weight
 /* explore for a bit, estimate the pop and then take a decision */
 uint32_t last_decision_tick = 0; /* when last decision was taken */
 uint32_t exploration_ticks = 250; /* take a decision only after exploring the environment */
@@ -195,27 +195,6 @@ void exponential_average(uint8_t resource_id, uint8_t resource_pop) {
 #endif
 }
 
-
-/* -------------------------------------*/
-/* Compute estimation for res given the */
-/* other two resources ores1 and ores2  */
-/* Use message count to normalize       */
-/* -------------------------------------*/
-
-uint8_t estimate_population(uint8_t res, uint8_t ores1, uint8_t ores2, uint8_t msg_count) {
-  /* compute according to the following formula:                     */
-  /* hits_i/(hits_i+hits_empty) * (1-(hits_otherResources/all_hits)) */
-  // Avoid computing if estimated_pop should be 255
-  if(res != msg_count) {
-    float no_ores = res+(msg_count-res+ores1+ores2);
-    float all_ores = ores1+ores2;
-    return  (uint8_t) (255*((float)res/no_ores) * (1-(all_ores/(float)msg_count)));
-  } else {
-    return 255;
-  }
-}
-
-
 /* ------------------------------------- */
 /* Merge different scan from the same kb */
 /* or compute the population if the time */
@@ -235,62 +214,15 @@ void merge_scan(bool time_window_is_over) {
       return;
     }
 
-#ifdef DEBUG_KILOBOT
-    /**** save DEBUG information ****/
-    debug_info_set(num_messages, messages_count);
-    uint8_t allres = 0;
     for(i=0; i<RESOURCES_SIZE; i++) {
-      allres += resources_hits[i];
-    }
-    debug_info_set(hits_empty, messages_count-allres);
-    /********************************/
-#endif
-
-    for(i=0; i<RESOURCES_SIZE; i++) {
-      if(i == 0) {
-#ifdef DEBUG_KILOBOT
-        /**** save DEBUG information ****/
-        debug_info_set(hits_resource0, resources_hits[i]);
-        /********************************/
-#endif
-
         // update by mean of exponential moving average
-        uint8_t e_pop = estimate_population(resources_hits[0], resources_hits[1], resources_hits[2], messages_count);
-        exponential_average(i, e_pop);
-      } else if(i == 1) {
-
-#ifdef DEBUG_KILOBOT
-        /**** save DEBUG information ****/
-        debug_info_set(hits_resource1, resources_hits[i]);
-        /********************************/
-#endif
-
-        // update by mean of exponential moving average
-        uint8_t e_pop = estimate_population(resources_hits[1], resources_hits[0], resources_hits[2], messages_count);
-        exponential_average(i, e_pop);
-      } else if(i == 2) {
-
-#ifdef DEBUG_KILOBOT
-        /**** save DEBUG information ****/
-        debug_info_set(hits_resource2, resources_hits[i]);
-        /********************************/
-#endif
-
-        // update by mean of exponential moving average
-        uint8_t e_pop = estimate_population(resources_hits[2], resources_hits[0], resources_hits[1], messages_count);
-        exponential_average(i, e_pop);
-      }
+        exponential_average(i, temp_resource_pops[i]);
     }
 
-    // reset hits counts
-    memset(resources_hits, 0, sizeof(resources_hits));
+    // reset temp res pops counts
+    memset(temp_resource_pops, 0, sizeof(temp_resource_pops));
     // reset message count
     messages_count = 0;
-  } else {
-    // add the hit to the hits count
-    if(current_arena_state != 255) {
-      resources_hits[current_arena_state]++;
-    }
   }
 }
 
@@ -314,26 +246,39 @@ void parse_smart_arena_data(uint8_t data[9], uint8_t kb_position) {
 
   // index of first element in the data
   uint8_t shift = kb_position*3;
-  // get arena state
-  int _arenastate = (data[1+shift] &0x60) >> 5;
+
+  // get arena state by resource (at max 3 resources allowed in the simulation)
+  uint8_t ut_a = (data[1+shift] &0x3C) >> 2;
+  uint8_t ut_b = (data[1+shift] &0x03) << 2 | (data[2+shift] &0xC0);
+  uint8_t ut_c = (data[2+shift] &0x3C) >> 2;
+  // if all uiunt8_t we are on empty space (or on an area with no residual utility)
+  // note that umin, is not computed by the kb but given by the arena. i.e. signal 0 residual utility also
+  // if there is some residual but it is below the umin threshold
+  // This trick is used to save some message space
+
   // convert to 0,1,2 for resources and 255 for empty
-  if(_arenastate == 0) {
+  if(ut_a+ut_b+ut_c == 0) {
     current_arena_state = 255;
+  } else if(ut_a > 0) {
+    current_arena_state = 0;
+  } else if(ut_b > 0) {
+    current_arena_state = 1;
   } else {
-    current_arena_state = _arenastate-1;
+    current_arena_state = 2;
   }
 
-  // get umin for resource if any
-  if(current_arena_state != 255) {
-    int _umin = (data[1+shift] &0x1E) >> 1;
-    resources_umin[current_arena_state] = _umin;
-  }
+  // store received utility
+  // 15 slices of means every 17
+  temp_resource_pops[0] = (float)ut_a*17*(ema_alpha) + temp_resource_pops[0]*(1-ema_alpha);
+  temp_resource_pops[1] = (float)ut_b*17*(ema_alpha) + temp_resource_pops[1]*(1-ema_alpha);
+  temp_resource_pops[2] = (float)ut_c*17*(ema_alpha) + temp_resource_pops[2]*(1-ema_alpha);
+
   // get rotation toward the center (if far from center)
-  int _rotationsign = (data[1+shift] &0x01);
-  int _rotation = data[2+shift];
-  rotation_to_center = ((float)_rotation*M_PI)/180.0;
-  if(_rotationsign == 1) {
-    rotation_to_center = -1 * rotation_to_center;
+  uint8_t rotation_slice = data[2+shift] &0x03;
+  if(rotation_slice == 3) {
+    rotation_to_center = -M_PI/2;
+  } else {
+    rotation_to_center = rotation_slice*M_PI/2;
   }
 }
 
@@ -348,19 +293,27 @@ void message_rx(message_t *msg, distance_measurement_t *d) {
     /* see README.md to understand about ARK messaging */
     /* data has 3x24 bits divided as                   */
     /*  data[0]   data[1]   data[2]                    */
-    /* xxxx xxxx xyyz zzzw wwww wwww                   */
-    /* x bits used for kilobot id                      */
-    /* y bits used for kilobot arena state             */
-    /* z bits used for resource umin                   */
-    /* w bits used for kilobot rotattion toward center */
+    /* xxxx xxxx xxaa aabb bbcc ccyy                   */
+    /* x(10) bits used for kilobot id                  */
+    /* a(4) bits used for resource a utility           */
+    /* b(4) bits used for resource b utility           */
+    /* c(4) bits used for resource c utility           */
+    /* y(2) bits used for turing angle                 */
 
+    /* How to interpret the data received?             */
+    /* If no resource a,b,c utility is received then   */
+    /* means that the kb is on empty space             */
+    /* On the opposite, if a resource utility is there */
+    /* means that the kb is on resource space          */
+    /* The turning angle is divided in 4 equal slices  */
+    /* pi/4 to 3/4pi - 3/4pi to 5/4pi - 5/4pi to 7/4pi */
 
     // unpack message
     bool message_received = false;
-    // ids are first 9 bits
-    int id1 = msg->data[0] << 1 | msg->data[1] >> 7;
-    int id2 = msg->data[3] << 1 | msg->data[4] >> 7;
-    int id3 = msg->data[6] << 1 | msg->data[7] >> 7;
+    // ids are first 10 bits
+    int id1 = msg->data[0] << 2 | msg->data[1] >> 6;
+    int id2 = msg->data[3] << 2 | msg->data[4] >> 6;
+    int id3 = msg->data[6] << 2 | msg->data[7] >> 6;
 
     if(id1 == kilo_uid) {
       parse_smart_arena_data(msg->data, 0);
@@ -375,11 +328,7 @@ void message_rx(message_t *msg, distance_measurement_t *d) {
 
     // if received a message
     if(message_received) {
-      // if uncommitted or committed and not working on area
-      // if the kilobot is working on an area we decide not to update his scans
-      if(current_decision_state == 255 || (current_decision_state != 255 && current_decision_state != current_arena_state)) {
-          merge_scan(false);
-      }
+      merge_scan(false);
     }
 
   } else if(msg->type==1) {
@@ -395,28 +344,14 @@ void message_rx(message_t *msg, distance_measurement_t *d) {
       // increase messages_count for average estimation
       messages_count++;
 
-      // check received message and merge info
-      uint8_t e_pop, ores0, ores1, ores2, msg_count;
-      msg_count = msg->data[6];
+      // check received message and merge info and ema
+      uint8_t e_pop, ores0, ores1, ores2;
       ores0 = msg->data[3];
+      exponential_average(ores0, 0);
       ores1 = msg->data[4];
+      exponential_average(ores1, 1);
       ores2 = msg->data[5];
-      uint8_t res_index;
-      for(res_index=0; res_index<RESOURCES_SIZE; res_index++) {
-        if(res_index == 0) {
-          e_pop = estimate_population(ores0, ores1, ores2, msg_count);
-        } else if(res_index == 1) {
-          e_pop = estimate_population(ores1, ores0, ores2, msg_count);
-        } else if(res_index == 2) {
-          e_pop = estimate_population(ores2, ores0, ores1, msg_count);
-        } else {
-          printf("in kb interactive message");
-          fflush(stdout);
-          internal_error = true;
-          return;
-        }
-        exponential_average(e_pop, res_index);
-      }
+      exponential_average(ores2, 2);
 
       // store the message in the buffer for flooding and dm
       // if not stored yet
@@ -486,8 +421,9 @@ void take_decision() {
     uint16_t sum_committments = 0;
 
     for(i=0; i<RESOURCES_SIZE; i++) {
-      if(resources_pops[i] > resources_umin[i]) {
-        // normalize between 0 and 255 according to k
+      // if over umin threshold
+      if(resources_pops[i] > umin) {
+        // normalized between 0 and 255
         processes[i] = resources_pops[i]*h;
         sum_committments += processes[i];
       }
@@ -506,10 +442,13 @@ void take_decision() {
       uint8_t recruiter_state = recruitment_message->msg->data[1];
     }
 
-    // if the recruiter is committed and the pop of the area is above umin
-    if(recruiter_state != 255 && resources_pops[recruiter_state] > resources_umin[recruiter_state]) {
-      // computer recruitment value for current agent
-      processes[RESOURCES_SIZE] = resources_pops[recruiter_state]*k;
+    // if the recruiter is committed
+    if(recruiter_state != 255) {
+      // if over umin threshold
+      if(resources_pops[recruiter_state] > umin) {
+        // computer recruitment value for current agent
+        processes[RESOURCES_SIZE] = resources_pops[recruiter_state]*k;
+      }
     }
 
     /****************************************************/
@@ -518,8 +457,10 @@ void take_decision() {
     /* check if the sum of all processes is below 1 (here 255 since normalize to uint_8) */
     /*                                  STOP                                              */
     if(sum_committments+processes[RESOURCES_SIZE] > 255) {
+#ifdef DEBUG_KILOBOT
       printf("in sum commitment");
       fflush(stdout);
+#endif
       internal_error = true;
       return;
     }
@@ -546,7 +487,7 @@ void take_decision() {
     /****************************************************/
     uint8_t abandon = 0;
     /* leave immediately if reached the threshold */
-    if(resources_pops[current_decision_state] <= resources_umin[current_decision_state]) {
+    if(resources_pops[current_decision_state] <= umin) {
       abandon = 255*h;
     }
 
@@ -561,10 +502,13 @@ void take_decision() {
     if(cross_message) {
      inhibitor_state = cross_message->msg->data[1];
     }
-    // if the recruiter is committed and the pop of the area is above umin
-    if(inhibitor_state != 255 && resources_pops[inhibitor_state] > resources_umin[inhibitor_state]) {
-      // computer recruitment value for current agent
-      cross_inhibition = resources_pops[inhibitor_state]*k;
+    // if the recruiter is committed
+    if(inhibitor_state != 255) {
+      // if above umin threshold
+      if(resources_pops[inhibitor_state] > umin) {
+        // computer recruitment value for current agent
+        cross_inhibition = resources_pops[inhibitor_state]*k;
+      }
     }
 
     /****************************************************/
@@ -573,8 +517,10 @@ void take_decision() {
     /* check if the sum of all processes is below 1 (here 255 since normalize to uint_8) */
     /*                                  STOP                                              */
     if(abandon+cross_inhibition > 255) {
+#ifdef DEBUG_KILOBOT
       printf("in abandon plus cross");
       fflush(stdout);
+#endif
       internal_error = true;
       return;
     }
@@ -595,6 +541,23 @@ void take_decision() {
 /*-------------------------------------------------------------------*/
 
 void random_walk(){
+  /* if the arena signals a rotation, then rotate toward the center */
+  if(rotation_to_center != 0) {
+    if(rotation_to_center > 0) {
+      set_motion(TURN_RIGHT);
+    } else {
+      set_motion(TURN_LEFT);
+    }
+    // when too close to the border bias toward center
+    float angle = abs(rotation_to_center);
+
+    /* compute turning time */
+    turning_ticks = (uint32_t)((angle / M_PI) * max_turning_ticks);
+    straight_ticks = (uint32_t)(fabs(levy(std_motion_steps, levy_exponent)));
+    return;
+  }
+
+  /* else keep on with normal random walk */
   switch (current_motion_type) {
   case TURN_LEFT:
   case TURN_RIGHT:
@@ -611,29 +574,18 @@ void random_walk(){
     if(kilo_ticks > last_motion_ticks + straight_ticks) {
       float angle = 0; // rotation angle
 
-      /* if the smart arena signals a rotation angle then rotate */
-      if(rotation_to_center != 0) {
-        if(rotation_to_center > 0) {
-          set_motion(TURN_RIGHT);
-        } else {
-          set_motion(TURN_LEFT);
-        }
-        // when too close to the border bias toward center
-        angle = abs(rotation_to_center*2);
+      /* perform a random turn */
+      last_motion_ticks = kilo_ticks;
+      if (rand_soft() % 2) {
+        set_motion(TURN_LEFT);
       } else {
-        /* perform a random turn */
-        last_motion_ticks = kilo_ticks;
-        if (rand_soft() % 2) {
-          set_motion(TURN_LEFT);
-        } else {
-          set_motion(TURN_RIGHT);
-        }
-        /* random angle */
-        if(crw_exponent == 0) {
-          angle = uniform_distribution(0, (M_PI));
-        } else {
-          angle = fabs(wrapped_cauchy_ppf(crw_exponent));
-        }
+        set_motion(TURN_RIGHT);
+      }
+      /* random angle */
+      if(crw_exponent == 0) {
+        angle = uniform_distribution(0, (M_PI));
+      } else {
+        angle = fabs(wrapped_cauchy_ppf(crw_exponent));
       }
 
       /* compute turning time */
@@ -663,9 +615,8 @@ void setup() {
   set_motion(FORWARD);
   uint8_t i;
   for(i=0; i<RESOURCES_SIZE; i++) {
-    resources_hits[i] = 0;
+    temp_resource_pops[i] = 0;
     resources_pops[i] = 0;
-    resources_umin[i] = 0;
   }
 }
 
@@ -705,8 +656,7 @@ void loop() {
    *   rebroadcast messages
    */
   if(exploration_ticks <= kilo_ticks-last_decision_ticks) {
-
-    // fill my message before resetting the hits
+    // fill my message before resetting the temp resource count
     // fill up message type. Type 1 used for kbs
     interactive_message.type = 1;
     // fill up the current kb id
@@ -714,13 +664,12 @@ void loop() {
     // fill up the current states
     interactive_message.data[1] = current_decision_state;
     interactive_message.data[2] = current_arena_state;
-    // share hits counts for all resources
+    // share my resource pop for all resources
     uint8_t res_index;
     for(res_index=0; res_index<RESOURCES_SIZE; res_index++) {
-      interactive_message.data[3+res_index] = resources_hits[res_index];
+      interactive_message.data[3+res_index] = temp_resource_pops[res_index];
     }
-    // also send current message count since it is need for averaging
-    interactive_message.data[3+RESOURCES_SIZE] = messages_count;
+
     // fill up the crc
     interactive_message.crc = message_crc(&interactive_message);
 
@@ -764,36 +713,33 @@ void loop() {
     }
   }
 
-  current_decision_state = COMMITTED_AREA_0;
-  if(current_decision_state == current_arena_state) {
-    // turn or green led if status is committed and over the area
-    set_color(RGB(0,3,0));
-    // stop and exploit the area
-    set_motion(STOP);
-  } else {
-    // turn on red led if status is committed but still loking for the area
-    set_color(RGB(3,0,0));
-    random_walk(); // looking for the wanted resource
-  }
-
-  /* /\* Now parse the decision and act accordingly *\/ */
-  /* if(current_decision_state != NOT_COMMITTED) { */
-  /*   // if over the wanted resource */
-  /*   if(current_decision_state == current_arena_state) { */
-  /*     // turn or green led if status is committed and over the area */
-  /*     set_color(RGB(0,3,0)); */
-  /*     // stop and exploit the area */
-  /*     set_motion(STOP); */
-  /*   } else { */
-  /*     // turn on red led if status is committed but still loking for the area */
-  /*     set_color(RGB(3,0,0)); */
-  /*     random_walk(); // looking for the wanted resource */
-  /*   } */
+  /* current_decision_state = COMMITTED_AREA_0; */
+  /* // never stop when exploiting the area */
+  /* if(current_decision_state == current_arena_state) { */
+  /*   // turn or green led if status is committed and over the area */
+  /*   set_color(RGB(0,3,0)); */
   /* } else { */
-  /*   // simply continue as uncommitted and explore */
-  /*   set_color(RGB(3,3,3)); */
-  /*   random_walk(); */
+  /*   // turn on red led if status is committed but still loking for the area */
+  /*   set_color(RGB(3,0,0)); */
   /* } */
+  /* random_walk(); // looking for the wanted resource */
+
+  /* Now parse the decision and act accordingly */
+  if(current_decision_state != NOT_COMMITTED) {
+    // if over the wanted resource
+    if(current_decision_state == current_arena_state) {
+      // turn or green led if status is committed and over the area
+      set_color(RGB(0,3,0));
+    } else {
+      // turn on red led if status is committed but still loking for the area
+      set_color(RGB(3,0,0));
+    }
+  } else {
+    // simply continue as uncommitted and explore
+    set_color(RGB(3,3,3));
+  }
+  // always random walk, never stop even when exploiting
+  random_walk();
 }
 
 int main() {

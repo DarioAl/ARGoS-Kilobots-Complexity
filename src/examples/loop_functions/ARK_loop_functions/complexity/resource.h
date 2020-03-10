@@ -1,8 +1,10 @@
 /**
  * A resource is represented by a group of areas.
- * i.e. a group of dots around the environment that shares the same type
+ * i.e. a group of circles around the environment that shares the same type
  * A resource has a cap and a population (the number of areas) that grows according to
  * a logistic function.
+ * The population of the resource is computed as the sum of the populations of all areas.
+ * Area are not removed when their population reach zero but they can still grow back.
  *
  * @author Dario Albani
  * @email dario.albani@istc.cnr.it
@@ -36,18 +38,18 @@ class ResourceALF {
   Real area_radius;   // the radius of the circle
   UInt64 seq_areas_id; // used to sequentially assign ids to areas
   std::vector<AreaALF> areas; /* areas of the resource */
-  Real population; /* Total resource population from0 to k*/
+  Real population; /* Total resource population from 0 to k*/
 
   /************************************/
-  /* logistic growth                  */
+  /* area logistic growth             */
   /************************************/
-  Real eta; /* growht factor */
-  Real k; /* maximum population for single area */
-  Real umin; /* population threshold in percentange @see doStep */
-
+  Real eta; /* area growth factor */
+  Real k; /* maximum population for single resource -- also determines the number of areas */
   /************************************/
   /* area exploitation function       */
-  /************************************/ std::string exploitation; /* single area exploitation */
+  /************************************/
+  std::string exploitation; /* single area exploitation */
+  Real lambda; /* exploitation coefficient for the area */
 
   /* constructor */
   inline ResourceALF() {
@@ -55,7 +57,6 @@ class ResourceALF {
     population = 0;
     eta = 0;
     k = 0;
-    umin = 0;
     area_radius = 0;
     seq_areas_id = 0;
   }
@@ -66,8 +67,15 @@ class ResourceALF {
   ~ResourceALF(){}
 
   /*
+   * Get population normalized between 0 and 1 instead of 0 and k
+   */
+  inline Real getNormalizedPopulation() {
+    return population/k;
+  }
+  /*
    * generate areas for the resource by taking into account all other areas positions
    */
+  void generate(const std::vector<AreaALF>& oth_areas, const Real arena_size);
   void generate(const std::vector<AreaALF>& oth_areas, const Real arena_size, uint num_of_areas);
 
   /*
