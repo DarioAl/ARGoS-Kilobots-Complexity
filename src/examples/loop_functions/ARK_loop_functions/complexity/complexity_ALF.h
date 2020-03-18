@@ -39,7 +39,7 @@ class CCI_KilobotController;
 #include <argos3/plugins/robots/kilobot/simulator/kilobot_communication_default_actuator.h>
 #include <argos3/plugins/simulator/entities/box_entity.h>
 
-//debug kilobot info
+//debug kilobot info and m_kilobotState
 #include <examples/behaviors/complexity.h>
 
 //kilobot messaging
@@ -114,16 +114,7 @@ private:
   /*  virtual Environment variables   */
   /************************************/
   std::vector<ResourceALF> resources;    // all resources
-  std::vector<AreaALF> areas; // all areas in the arena
-
-  /************************************/
-  /* virtual environment struct*/
-  /************************************/
-
-  /* used to store the state of each kilobot
-   * 255 is used for no resource
-   */
-  std::vector<UInt8> m_vecKilobotStates;
+  std::vector<m_kilobotstate> m_vecKilobotStates; // all kbs states
 
   /*
    * used to store the led color of each kilobot

@@ -1,4 +1,4 @@
-// TODO considera di non usare il flooding in reale oppure fallo in quei due secondi
+//TODO considera di non usare il flooding in reale oppure fallo in quei due secondi
 // usa #ifdef ARGOS_simulator_BUILD
 // ogni tanto fa un broadcast che dice ai kbs di iniziare a parlare (delay nel mandare il messaggio su kb)
 // ark dice di parlare e nel momento in cui dicono smetti di parlare cambia anche stato e fai decisione
@@ -44,12 +44,6 @@
 // define the resources to be expected in the current simulation
 #define RESOURCES_SIZE 3
 
-/* enum for boolean flags */
-typedef enum {
-              false = 0,
-              true = 1,
-} bool;
-
 
 /*-------------------------------------------------------------------*/
 /* Motion Variables                                                  */
@@ -89,6 +83,10 @@ typedef enum {
               INSIDE_AREA_0=0,
               INSIDE_AREA_1=1,
               INSIDE_AREA_2=2,
+              INSIDE_AREA_01=3,
+              INSIDE_AREA_02=6,
+              INSIDE_AREA_12=7,
+              INSIDE_AREA_012=21,
 } arena_t;
 
 /* enum for keeping trace of internal kilobots decision related states */
@@ -108,7 +106,7 @@ bool internal_error = false;
 /* Exponential Moving Average alpha */
 const float ema_alpha = 0.75;
 /* Umin threshold for the kb in 255/16 splice */
-uint8_t umin = 255/10;
+uint8_t umin = 0;
 
 /* Variables for Smart Arena messages */
 uint8_t temp_resource_pops[RESOURCES_SIZE]; // temporary local knowledge about resources
@@ -117,12 +115,11 @@ uint8_t resources_pops[RESOURCES_SIZE]; // keep local knowledge about resources
 /*-------------------------------------------------------------------*/
 /* Decision Making                                                   */
 /*-------------------------------------------------------------------*/
-uint32_t last_decision_ticks = 0;
 /* processes variables */
-const float k = 0.0; // determines the interactive (i.e. kilobot-kilobot) processes weight
-const float h = 1.0; // determines the spontaneous (i.e. based on own information) processes weight
+const float h = 0.4; // determines the spontaneous (i.e. based on own information) processes weight
+const float k = 0.2; // determines the interactive (i.e. kilobot-kilobot) processes weight
 /* explore for a bit, estimate the pop and then take a decision */
-uint32_t last_decision_tick = 0; /* when last decision was taken */
+uint32_t last_decision_ticks = 0; /* when last decision was taken */
 uint32_t exploration_ticks = 250; /* take a decision only after exploring the environment */
 
 /*-------------------------------------------------------------------*/
@@ -131,11 +128,21 @@ uint32_t exploration_ticks = 250; /* take a decision only after exploring the en
 /* flag for message sent */
 uint8_t sent_message = 0;
 
+/* turn this flag on if there is a valid message to send */
+uint8_t to_send_message;
+
+/* unique msg id */
+uint8_t msg_id = 0;
+
 /* current kb message out */
 message_t interactive_message;
 
+/* for broacasts */
+uint32_t broadcast_ticks = 500;
+uint32_t last_broadcast_ticks = 0;
+
 /* messages are valid for valid_util ticks */
-uint8_t valid_until = 100;
+uint32_t valid_until = 250;
 
 /* buffer for communications */
 /* used both for flooding protocol and for dm */
@@ -146,9 +153,7 @@ uint8_t messages_count;
 
 /*-------------------------------------------------------------------*/
 /* Function for setting the motor speed                              */
-/*-------------------------------------------------------------------*/
-void set_motion(motion_t new_motion_type) {
-  if(current_motion_type != new_motion_type ) {
+/*-------------------------------------------------------------------*/ void set_motion(motion_t new_motion_type) {if(current_motion_type != new_motion_type ) {
     switch( new_motion_type ) {
     case FORWARD:
       spinup_motors();
@@ -161,8 +166,7 @@ void set_motion(motion_t new_motion_type) {
     case TURN_RIGHT:
       spinup_motors();
       set_motors(0,kilo_turn_right);
-      break;
-    case STOP:
+      break; case STOP:
     default:
       set_motors(0,0);
     }
@@ -201,6 +205,7 @@ void exponential_average(uint8_t resource_id, uint8_t resource_pop) {
 /* for estimation has passed             */
 /* ------------------------------------- */
 
+
 void merge_scan(bool time_window_is_over) {
   // iterator for cycles
   uint8_t i;
@@ -208,6 +213,10 @@ void merge_scan(bool time_window_is_over) {
   // only merge after a time window and if there are messages
   if(time_window_is_over) {
     if(messages_count == 0) {
+#ifdef DEBUG_KILOBOT
+      printf("in message count \n");
+      fflush(stdout);
+#endif
       // time window for estimation closed but no messages
       // signal internal error
       internal_error = true;
@@ -215,8 +224,11 @@ void merge_scan(bool time_window_is_over) {
     }
 
     for(i=0; i<RESOURCES_SIZE; i++) {
+      // only update if non zero
+      if(temp_resource_pops[i] != 0) {
         // update by mean of exponential moving average
         exponential_average(i, temp_resource_pops[i]);
+      }
     }
 
     // reset temp res pops counts
@@ -251,27 +263,36 @@ void parse_smart_arena_data(uint8_t data[9], uint8_t kb_position) {
   uint8_t ut_a = (data[1+shift] &0x3C) >> 2;
   uint8_t ut_b = (data[1+shift] &0x03) << 2 | (data[2+shift] &0xC0);
   uint8_t ut_c = (data[2+shift] &0x3C) >> 2;
-  // if all uiunt8_t we are on empty space (or on an area with no residual utility)
-  // note that umin, is not computed by the kb but given by the arena. i.e. signal 0 residual utility also
-  // if there is some residual but it is below the umin threshold
-  // This trick is used to save some message space
-
-  // convert to 0,1,2 for resources and 255 for empty
   if(ut_a+ut_b+ut_c == 0) {
+    // set this up if over no resource
     current_arena_state = 255;
-  } else if(ut_a > 0) {
-    current_arena_state = 0;
-  } else if(ut_b > 0) {
-    current_arena_state = 1;
   } else {
-    current_arena_state = 2;
+    current_arena_state = 0;
+    if(ut_c > 0) {
+      // either 0 (on a) or 2 (on c)
+      current_arena_state = 2;
+    }
+    if(ut_b > 0) {
+      // either 0 (on a) or 1 (on b) or 7 (on b and c)
+      current_arena_state = current_arena_state*3+1;
+    }
+    if(ut_a > 0) {
+      // either 0 (on a) 3 (on a and b) 6 (on a and c) 21 (on a and b and c)
+      current_arena_state = current_arena_state*3;
+    }
   }
 
   // store received utility
   // 15 slices of means every 17
-  temp_resource_pops[0] = (float)ut_a*17*(ema_alpha) + temp_resource_pops[0]*(1-ema_alpha);
-  temp_resource_pops[1] = (float)ut_b*17*(ema_alpha) + temp_resource_pops[1]*(1-ema_alpha);
-  temp_resource_pops[2] = (float)ut_c*17*(ema_alpha) + temp_resource_pops[2]*(1-ema_alpha);
+  if(ut_a != 0) {
+    temp_resource_pops[0] = (float)ut_a*17;
+  }
+  if(ut_b != 0) {
+    temp_resource_pops[1] = (float)ut_b*17;
+  }
+  if(ut_c != 0) {
+    temp_resource_pops[2] = (float)ut_c*17;
+  }
 
   // get rotation toward the center (if far from center)
   uint8_t rotation_slice = data[2+shift] &0x03;
@@ -330,13 +351,11 @@ void message_rx(message_t *msg, distance_measurement_t *d) {
     if(message_received) {
       merge_scan(false);
     }
-
   } else if(msg->type==1) {
     /* get id (always firt byte when coming from another kb) */
     uint8_t id = msg->data[0];
-
     // check that is a valid crc and another kb
-    if(id!=kilo_uid && msg->crc==message_crc(msg)){
+    if(id!=kilo_uid){
       /* ----------------------------------*/
       /* KB interactive message            */
       /* ----------------------------------*/
@@ -345,7 +364,7 @@ void message_rx(message_t *msg, distance_measurement_t *d) {
       messages_count++;
 
       // check received message and merge info and ema
-      uint8_t e_pop, ores0, ores1, ores2;
+      uint8_t ores0, ores1, ores2;
       ores0 = msg->data[3];
       exponential_average(ores0, 0);
       ores1 = msg->data[4];
@@ -355,29 +374,29 @@ void message_rx(message_t *msg, distance_measurement_t *d) {
 
       // store the message in the buffer for flooding and dm
       // if not stored yet
-      if(!b_head) {
+      if(b_head == NULL) {
         // create the head of the list
         b_head = malloc(sizeof(node_t));
-        if(!b_head) {
-          internal_error = true;
-          return;
-        }
-
         // fill the new one
-        b_head->msg = msg;
+        b_head->msg = *msg;
         b_head->next = NULL;
         b_head->time_stamp = kilo_ticks;
         b_head->been_rebroadcasted = false;
       } else {
         // check if it has been parsed before
-        // avoid resending same messages over and over again
-        if(msg->data[0] == kilo_uid || mtl_is_message_present(b_head, msg) != -1) {
-          // do not store, it is mine
+        // avoid resending same messages over and over agai/n
+        if(mtl_is_message_present(b_head, *msg) >= 0) {
+          // do not store
           return;
         }
 
         // message is new, store it
-        mtl_push_back(b_head, msg, kilo_ticks);
+        node_t* new_node;
+        new_node = malloc(sizeof(node_t));
+        new_node->msg = *msg;
+        new_node->time_stamp=kilo_ticks;
+        new_node->been_rebroadcasted=false;
+        mtl_push_back(b_head, new_node);
       }
     }
   }
@@ -389,8 +408,13 @@ void message_rx(message_t *msg, distance_measurement_t *d) {
 /*-------------------------------------------------------------------*/
 
 message_t *message_tx() {
-  /* this one is filled in the loop */
-  return &interactive_message;
+  if(to_send_message) {
+    /* this one is filled in the loop */
+    to_send_message = false;
+    return &interactive_message;
+  } else {
+    return NULL;
+  }
 }
 
 
@@ -432,14 +456,24 @@ void take_decision() {
     /****************************************************/
     /* recruitment over a random agent                  */
     /****************************************************/
-
-    // get node from the list
     node_t* recruitment_message = NULL;
-    mtl_get_node_at(b_head, rand_soft()*mtl_size(b_head)-1, recruitment_message);
-
     uint8_t recruiter_state = 255;
-    if(recruitment_message) {
-      uint8_t recruiter_state = recruitment_message->msg->data[1];
+
+    // get list size
+    unsigned list_size = mtl_size(b_head);
+    // if list non empty
+    if(list_size > 0) {
+      // extract a random node
+      uint8_t rand = rand_soft()*(list_size-1);
+      // retrieve the node
+      recruitment_message = b_head;
+      while(recruitment_message && rand>0) {
+        // set inhibitor state
+        recruiter_state = recruitment_message->msg.data[1];
+
+        recruitment_message = recruitment_message->next;
+        rand = rand-1;
+      }
     }
 
     // if the recruiter is committed
@@ -447,7 +481,7 @@ void take_decision() {
       // if over umin threshold
       if(resources_pops[recruiter_state] > umin) {
         // computer recruitment value for current agent
-        processes[RESOURCES_SIZE] = resources_pops[recruiter_state]*k;
+        processes[RESOURCES_SIZE] = (uint8_t)(resources_pops[recruiter_state]*k);
       }
     }
 
@@ -458,7 +492,7 @@ void take_decision() {
     /*                                  STOP                                              */
     if(sum_committments+processes[RESOURCES_SIZE] > 255) {
 #ifdef DEBUG_KILOBOT
-      printf("in sum commitment");
+      printf("in sum commitment: %d, %d\n", sum_committments, processes[RESOURCES_SIZE]);
       fflush(stdout);
 #endif
       internal_error = true;
@@ -494,20 +528,33 @@ void take_decision() {
     /****************************************************/
     /* cross inhibtion over a random agent              */
     /****************************************************/
-
     uint8_t cross_inhibition = 0;
-    node_t* cross_message = NULL;
-    mtl_get_node_at(b_head, rand_soft()*mtl_size(b_head)-1, cross_message);
+    node_t *cross_message = NULL;
     uint8_t inhibitor_state = 255;
-    if(cross_message) {
-     inhibitor_state = cross_message->msg->data[1];
+
+    // get list size
+    unsigned list_size = mtl_size(b_head);
+    // if list non empty
+    if(list_size > 0) {
+      // extract a random node
+      uint8_t rand = rand_soft()*(list_size-1);
+      // retrieve the node
+      cross_message = b_head;
+      while(cross_message && rand>0) {
+        // set inhibitor state
+        inhibitor_state = cross_message->msg.data[1];
+
+        cross_message = cross_message->next;
+        rand = rand-1;
+      }
     }
-    // if the recruiter is committed
+
+    // if the inhibitor is committed
     if(inhibitor_state != 255) {
       // if above umin threshold
       if(resources_pops[inhibitor_state] > umin) {
         // computer recruitment value for current agent
-        cross_inhibition = resources_pops[inhibitor_state]*k;
+        cross_inhibition = (uint8_t)(resources_pops[inhibitor_state]*k);
       }
     }
 
@@ -518,7 +565,7 @@ void take_decision() {
     /*                                  STOP                                              */
     if(abandon+cross_inhibition > 255) {
 #ifdef DEBUG_KILOBOT
-      printf("in abandon plus cross");
+      printf("in abandon plus cross \n");
       fflush(stdout);
 #endif
       internal_error = true;
@@ -527,7 +574,14 @@ void take_decision() {
 
     // a random number to extract next decision
     int extraction = rand_soft();
-    extraction -= (abandon+cross_inhibition);
+    // subtract abandon
+    extraction -= abandon;
+    if(extraction <= 0) {
+     current_decision_state = NOT_COMMITTED;
+      return;
+    }
+    // subtract cross-inhibition
+    extraction -= cross_inhibition;
     if(extraction <= 0) {
       current_decision_state = NOT_COMMITTED;
       return;
@@ -615,8 +669,8 @@ void setup() {
   set_motion(FORWARD);
   uint8_t i;
   for(i=0; i<RESOURCES_SIZE; i++) {
-    temp_resource_pops[i] = 0;
-    resources_pops[i] = 0;
+    temp_resource_pops[i] = 1;
+    resources_pops[i] = 1;
   }
 }
 
@@ -670,8 +724,14 @@ void loop() {
       interactive_message.data[3+res_index] = temp_resource_pops[res_index];
     }
 
+    // last byte used for msg id
+    interactive_message.data[8] = msg_id;
+    msg_id ++; // update the id after
     // fill up the crc
     interactive_message.crc = message_crc(&interactive_message);
+
+    // tell that we have a msg to send
+    to_send_message = true;
 
     // update utility estimation
     merge_scan(true);
@@ -681,62 +741,98 @@ void loop() {
 
     // reset last decision ticks
     last_decision_ticks = kilo_ticks;
-
-  } else if(sent_message){
-    // reset flag
-    sent_message = 0;
+  } else if(sent_message && broadcast_ticks <= kilo_ticks-last_broadcast_ticks) {
     // get first not rebroadcasted message from flooding buffer
     node_t* not_rebroadcasted = NULL;
-    mtl_get_not_rebroadcasted(b_head, not_rebroadcasted);
+    uint16_t nr_pos = mtl_get_first_not_rebroadcasted(b_head, &not_rebroadcasted);
 
     // check if still valid or old
     while(not_rebroadcasted){
-      if(kilo_ticks-not_rebroadcasted->time_stamp > exploration_ticks) {
+      if(kilo_ticks-not_rebroadcasted->time_stamp > valid_until ) {
         // is old, delete
-        mtl_remove_node(&b_head, not_rebroadcasted);
         not_rebroadcasted = NULL;
+        mtl_remove_at(&b_head, nr_pos);
         // get next one
-        mtl_get_not_rebroadcasted(b_head, not_rebroadcasted);
+        nr_pos = mtl_get_first_not_rebroadcasted(b_head, &not_rebroadcasted);
       } else {
         // got it, break and set it up for rebroadcast
-        not_rebroadcasted->been_rebroadcasted = 1;
+        not_rebroadcasted->been_rebroadcasted = true;
         break;
       }
     }
 
     // if there is a valid message then set it up for rebroadcast
     if(not_rebroadcasted) {
+      // tell that we have a msg to send
+      to_send_message = true;
       // set it up for rebroadcast
       interactive_message.type = 1;
-      memcpy(interactive_message.data, not_rebroadcasted->msg->data, sizeof(uint8_t));
-      interactive_message.crc = not_rebroadcasted->msg->crc;
+      memcpy(interactive_message.data, not_rebroadcasted->msg.data, sizeof(uint8_t));
+      interactive_message.crc = not_rebroadcasted->msg.crc;
     }
+
+    // reset flag
+    sent_message = 0;
+    last_broadcast_ticks = kilo_ticks;
   }
 
   /* current_decision_state = COMMITTED_AREA_0; */
   /* // never stop when exploiting the area */
-  /* if(current_decision_state == current_arena_state) { */
+  /* if(current_arena_state%3 == 0) { */
   /*   // turn or green led if status is committed and over the area */
-  /*   set_color(RGB(0,3,0)); */
+  /*   set_color(RGB(3,0,0)); */
   /* } else { */
   /*   // turn on red led if status is committed but still loking for the area */
-  /*   set_color(RGB(3,0,0)); */
+  /*   set_color(RGB(3,3,3)); */
   /* } */
   /* random_walk(); // looking for the wanted resource */
 
   /* Now parse the decision and act accordingly */
   if(current_decision_state != NOT_COMMITTED) {
-    // if over the wanted resource
-    if(current_decision_state == current_arena_state) {
-      // turn or green led if status is committed and over the area
-      set_color(RGB(0,3,0));
+    // if over empty, turn on white led to signal committed but not working
+    if(current_arena_state == 255) {
+      // if on empty space avoid if below and set led to white
+      // committed but not on the right resource
+      set_color(RGB(3,3,3));
+
     } else {
-      // turn on red led if status is committed but still loking for the area
-      set_color(RGB(3,0,0));
+      // if over the wanted resource turn on the right led color
+      if(current_decision_state == COMMITTED_AREA_0) {
+        // area 0
+        if(current_arena_state%3 == 0) {
+          // area 1 is red
+          set_color(RGB(3,0,0));
+        } else {
+          // turn on white because not on wanted resource
+          set_color(RGB(3,3,3));
+        }
+
+      } else if(current_decision_state == COMMITTED_AREA_1) {
+        // area 1
+        if(current_arena_state == 1 || current_arena_state == 3 ||
+           current_arena_state == 7 || current_arena_state == 21) {
+          // area 1 is green
+          set_color(RGB(0,3,0));
+        } else {
+          // turn on white because not on wanted resource
+          set_color(RGB(3,3,3));
+        }
+
+      } else if(current_decision_state == COMMITTED_AREA_2) {
+        // area 2
+        if(current_arena_state == 2 || current_arena_state == 6 ||
+           current_arena_state == 7 || current_arena_state == 21) {
+          // area 2 is blue
+          set_color(RGB(0,0,3));
+        } else {
+          // turn on white because not on wanted resource
+          set_color(RGB(3,3,3));
+        }
+      }
     }
   } else {
     // simply continue as uncommitted and explore
-    set_color(RGB(3,3,3));
+    set_color(RGB(0,0,0));
   }
   // always random walk, never stop even when exploiting
   random_walk();

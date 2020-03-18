@@ -5,8 +5,8 @@
     <!-- * General configuration * -->
     <!-- ************************* -->
     <framework>
-        <system threads="6"/>
-        <experiment length="1500"
+        <system threads="8"/>
+        <experiment length="2500"
         ticks_per_second="10"
         random_seed="1" />
     </framework>
@@ -23,7 +23,7 @@
                 <kilobot_communication implementation="default" />
             </actuators>
             <sensors>
-                <kilobot_communication implementation="default" medium="kilocomm" show_rays="true" />
+                <kilobot_communication implementation="default" medium="kilocomm"/>
             </sensors>
             <params behavior="build/examples/behaviors/complexity" />
         </kilobot_controller>
@@ -62,18 +62,29 @@
             initial_population = "1"
             eta="0.000"
             radius="0.1"
-            k="12"
-            lambda="0.001"
+            k="5"
+            lambda="0.0001"
             exploitation="cubic">
           </resource>
-          <!-- <resource -->
-          <!--     type="1" -->
-          <!--     initial_population = "25" -->
-          <!--     eta="0.00" -->
-          <!--     k="25" -->
-          <!--     umin="0.2" -->
-          <!--     exploitation="linear"> -->
-          <!-- </resource> -->
+          <resource
+            type="1"
+            initial_population = "1"
+            eta="0.000"
+            radius="0.1"
+            k="5"
+            lambda="0.0001"
+            exploitation="cubic">
+          </resource>
+          <resource
+            type="2"
+            initial_population = "1"
+            eta="0.000"
+            radius="0.1"
+            k="5"
+            lambda="0.0001"
+            exploitation="cubic">
+          </resource>
+
        </environments>
     </loop_functions>
 
@@ -81,7 +92,7 @@
         <distribute>
           <position method="uniform" min="-0.95,-0.95,0" max="0.95,0.95,0" />
             <orientation method="uniform" min="0,0,0" max="360,0,0" />
-            <entity quantity="25" max_trials="100">
+            <entity quantity="30" max_trials="100">
                 <kilobot id="kb">
                     <controller config="listener"/> <dynamics2d friction="0.7" />
                 </kilobot>
@@ -114,8 +125,8 @@
 
     <visualization>
         <qt-opengl>
-            <camera>
-                <placement idx="0" position="0,0,1" look_at="0,0,0" lens_focal_length="12" />
+          <camera>
+                <placement idx="0" position="0,0,1" look_at="0,0,0" lens_focal_length="25" />
                 <placement idx="1" position="0,1,1" look_at="0,0,0" lens_focal_length="15" />
                 <placement idx="2" position="1,1,1" look_at="0,0,0" lens_focal_length="15" />
                 <placement idx="3" position="1,0,1" look_at="0,0,0" lens_focal_length="15" />

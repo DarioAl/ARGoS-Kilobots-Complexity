@@ -19,7 +19,7 @@ base_dir=`dirname $base_config`
 
 echo "$CONFIGURATION_FILE" | egrep "^$SHARED_DIR" &> /dev/null || exit 1
 
-areas="25"
+areas="0"
 kbs="10 20 30 40 50"
 eta="0"
 RUNS=100

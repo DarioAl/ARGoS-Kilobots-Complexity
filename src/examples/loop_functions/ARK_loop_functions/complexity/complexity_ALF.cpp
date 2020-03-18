@@ -6,7 +6,7 @@
 #define DISTRIBUTION_ESTIMATION
 #ifdef DISTRIBUTION_ESTIMATION
 UInt8 debug_counter;
-UInt8 overall_r0_estimate;
+Real overall_r0_estimate;
 Real overall_distance;
 UInt8 overall_num_messages;
 #endif
@@ -15,11 +15,11 @@ UInt8 overall_num_messages;
 /****************************************/
 
 CComplexityALF::CComplexityALF() :
-  m_unDataAcquisitionFrequency(10),
   circular_arena_radius(0.51),
   circular_arena_width(0.01),
   circular_arena_height(0.05),
-  circular_arena_walls(50) {
+  circular_arena_walls(50),
+  m_unDataAcquisitionFrequency(10) {
   c_rng = CRandom::CreateRNG("argos");
 }
 
@@ -99,10 +99,19 @@ void CComplexityALF::SetupInitialKilobotStates() {
 
 void CComplexityALF::SetupInitialKilobotState(CKilobotEntity &c_kilobot_entity){
   UInt16 unKilobotID = GetKilobotId(c_kilobot_entity);
-  m_vecKilobotStates[unKilobotID] = 255;
+  // initialize kilobot state over empty state
+  m_kilobotstate m_state;
+  m_state.resources[0] = false;
+  m_state.resources[1] = false;
+  m_state.resources[2] = false;
+  m_vecKilobotStates[unKilobotID] = m_state;
+  // store kilobot position
   m_vecKilobotsPositions[unKilobotID] = GetKilobotPosition(c_kilobot_entity);
-  m_vecKilobotColors[unKilobotID] = CColor::WHITE;
+  // set kilobot color (initially off since uncommitted)
+  m_vecKilobotColors[unKilobotID] = CColor::BLACK;
+  // set up when last message was sent
   m_vecLastTimeMessaged[unKilobotID] = -1000;
+
   /* Get a non-colliding random position within the circular arena */
   bool distant_enough = false;
   Real rand_angle, rand_distance;
@@ -161,10 +170,8 @@ void CComplexityALF::SetupVirtualEnvironments(TConfigurationNode& t_tree){
     resources.push_back(resource);
   }
 
-  std::vector<CVector2> area_positions;
   for(ResourceALF& resource : resources) {
-    resource.generate(areas, circular_arena_radius);
-    areas.insert(std::end(areas), std::begin(resource.areas), std::end(resource.areas));
+    resource.generate(circular_arena_radius);
   }
 }
 
@@ -190,13 +197,7 @@ void CComplexityALF::GetExperimentVariables(TConfigurationNode& t_tree){
 void CComplexityALF::UpdateVirtualEnvironments() {
   // now do step and eventually generate new areas
   for(ResourceALF& resource : resources) {
-    resource.doStep(m_vecKilobotsPositions, m_vecKilobotStates, m_vecKilobotColors, areas, circular_arena_radius);
-  }
-
-  // update the local areas array
-  areas.clear();
-  for(ResourceALF& resource : resources) {
-    areas.insert(areas.end(), resource.areas.begin(), resource.areas.end());
+    resource.doStep(m_vecKilobotsPositions, m_vecKilobotStates, m_vecKilobotColors);
   }
 }
 
@@ -226,18 +227,21 @@ void CComplexityALF::UpdateKilobotState(CKilobotEntity &c_kilobot_entity){
   m_vecKilobotColors[unKilobotID] = GetKilobotLedColor(c_kilobot_entity);
 
   // update kb status
-  m_vecKilobotStates[unKilobotID] = 255;
+  m_kilobotstate m_state;
+  m_state.resources[0] = false;
+  m_state.resources[1] = false;
+  m_state.resources[2] = false;
   // check against resources
   for(const ResourceALF& resource : resources) {
     for(const AreaALF& area : resource.areas) {
       // distance from the center of area
       if(SquareDistance(GetKilobotPosition(c_kilobot_entity), area.position) <= pow(area.radius,2)) {
         // update the state and position of the kilobot and store it for later use
-        m_vecKilobotStates[unKilobotID] = resource.type;
-        return;
+        m_state.resources[resource.type] = true;
       }
     }
   }
+  m_vecKilobotStates[unKilobotID] = m_state;
 }
 
 /*******************************************/
@@ -270,7 +274,8 @@ void CComplexityALF::UpdateVirtualSensor(CKilobotEntity &c_kilobot_entity){
     /* data has 3x24 bits divided as                   */
     /*  data[0]   data[1]   data[2]                    */
     /* xxxx xxxx xxaa aabb bbcc ccyy                   */
-    /* x(10) bits used for kilobot id                  */ /* a(4) bits used for resource a utility           */
+    /* x(10) bits used for kilobot id                  */
+    /* a(4) bits used for resource a utility           */
     /* b(4) bits used for resource b utility           */
     /* c(4) bits used for resource c utility           */
     /* y(2) bits used for turing angle                 */
@@ -292,16 +297,18 @@ void CComplexityALF::UpdateVirtualSensor(CKilobotEntity &c_kilobot_entity){
     // 10 bits used for the id of the kilobot store in the first 9 bits of the message
     tkilobotMessage.m_sID = unKilobotID;
 
-    UInt8 kilobotState = m_vecKilobotStates[unKilobotID];
-    if(kilobotState == 0) {
+    m_kilobotstate kilobotState = m_vecKilobotStates[unKilobotID];
+    if(kilobotState.resources[0]) {
       // 4 bits used for resource a (thats why is divided by 17 i.e. 15 slices )
-      tkilobotMessage.m_sType = (UInt8)((resources.at(kilobotState).getNormalizedPopulation()*255)/17);
-    } else if(m_vecKilobotStates[unKilobotID] == 1) {
+      tkilobotMessage.m_sType = (UInt8)((resources.at(0).getNormalizedPopulation()*255)/17);
+    }
+    if(kilobotState.resources[1]) {
       // 4 bits used for resource b (thats why is multiplied by 16)
-      tkilobotMessage.m_sData = (UInt8)((resources.at(kilobotState).getNormalizedPopulation()*255)/17) << 6;
-    } else if(m_vecKilobotStates[unKilobotID] == 2) {
+      tkilobotMessage.m_sData = (UInt8)((resources.at(1).getNormalizedPopulation()*255)/17) << 6;
+    }
+    if(kilobotState.resources[2]) {
       // 4 bits used for resource c (thats why is divided by 17 i.e. 15 slices )
-      tkilobotMessage.m_sType = (UInt8)((resources.at(kilobotState).getNormalizedPopulation()*255)/17) << 2;
+      tkilobotMessage.m_sData = tkilobotMessage.m_sData | ((UInt8)((resources.at(2).getNormalizedPopulation()*255)/17) << 2);
     }
 
     // 2 remaining bits of m_sData are used to store rotation toward the center
@@ -395,27 +402,20 @@ void CComplexityALF::PostStep() {
   UInt8 nkbs = (m_tKilobotEntities.size()>3?3:m_tKilobotEntities.size());
   for(size_t i=0; i<nkbs; ++i) {
     // sum up all
-    overall_r0_estimate += m_tKBs[i].second->ema_resource0;
-    overall_num_messages += m_tKBs[i].second->num_messages;
+    overall_r0_estimate += (float)m_tKBs[i].second->ema_resource0/255.0;
   }
 
   // average
   overall_distance = sqrt(overall_distance);
 
   // save to log file
-  m_cOutput << (overall_r0_estimate/nkbs) << " "
-            << resources.at(0).population << " "
-            << (overall_distance/nkbs) << " "
-            << (overall_num_messages/nkbs) << std::endl;
+  m_cOutput << (float)overall_r0_estimate/(float)nkbs << " "
+            << (float)resources.at(0).population/(float)resources.at(0).k << std::endl;
   // reset counters
   debug_counter = 0;
   overall_r0_estimate = 0;
   overall_distance = 0;
   overall_num_messages = 0;
-  for(const ResourceALF& resource : resources) {
-    for(const AreaALF& area : resource.areas) {
-   std::cout << " area pop " << area.population << std::endl;
-    }}
 }
 
 /****************************************/
@@ -429,10 +429,10 @@ CColor CComplexityALF::GetFloorColor(const CVector2 &vec_position_on_plane) {
   for(const ResourceALF& resource : resources) {
     for(const AreaALF& area : resource.areas) {
       if(SquareDistance(vec_position_on_plane,area.position) < pow(area.radius,2)){
-        if(area.population < 0.15) {
+        if(area.population < 0.05) {
           cColor = CColor::GRAY80;
         } else {
-          cColor = area.color;
+          cColor = CColor(area.color.GetRed(), area.color.GetGreen(), area.color.GetBlue(), 0);
         }
        return cColor;
       }

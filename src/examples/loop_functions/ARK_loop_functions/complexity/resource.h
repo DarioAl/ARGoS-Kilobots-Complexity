@@ -22,6 +22,9 @@
 #include <argos3/core/utility/math/rng.h>
 #include <argos3/core/utility/logging/argos_log.h>
 
+//for m_kilobotState
+#include <examples/behaviors/complexity.h>
+
 #include "area.h"
 
 using namespace argos;
@@ -75,8 +78,7 @@ class ResourceALF {
   /*
    * generate areas for the resource by taking into account all other areas positions
    */
-  void generate(const std::vector<AreaALF>& oth_areas, const Real arena_size);
-  void generate(const std::vector<AreaALF>& oth_areas, const Real arena_size, uint num_of_areas);
+  void generate(const Real arena_size);
 
   /*
    * do one simulation step during which:
@@ -85,7 +87,7 @@ class ResourceALF {
    *
    * @return true if a specific min value is reached
    */
-  bool doStep(const std::vector<CVector2>& kilobot_positions, const std::vector<UInt8> kilobot_states, const std::vector<CColor> kilobot_colors, const std::vector<AreaALF>& oth_areas, const Real arena_radius);
+  bool doStep(const std::vector<CVector2>& kilobot_positions, const std::vector<m_kilobotstate> kilobot_states, const std::vector<CColor> kilobot_colors);
 
 };
 

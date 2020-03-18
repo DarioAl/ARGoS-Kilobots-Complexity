@@ -32,25 +32,17 @@ ResourceALF::ResourceALF(UInt8 type, TConfigurationNode& t_tree) : type(type) {
   }
 }
 
-void ResourceALF::generate(const std::vector<AreaALF>& oth_areas, const Real arena_radius) {
-  generate(oth_areas, arena_radius, this->k);
-}
-
-void ResourceALF::generate(const std::vector<AreaALF>& oth_areas, const Real arena_radius, uint num_of_areas) {
-  // concatenate oth_areas and this->areas to avoid placing a new area on
-  // the same spot
-  std::vector<AreaALF> all_areas;
-  all_areas.insert(all_areas.end(), oth_areas.begin(), oth_areas.end());
+void ResourceALF::generate(const Real arena_radius) {
   CVector2 pos;
   UInt16 tries = 0; // placement tries
   UInt16 maxTries = 9999; // max placement tries
 
-  // temp variabl to initialize the resources
+  // temp variable to initialize the resources
   Real initial_population = this->population;
   // reset population value (this was a placeholder until now)
   this->population = 0;
 
-  for(UInt32 i=0; i<num_of_areas; ++i) {
+  for(UInt32 i=0; i < this->k; ++i) {
     for(tries = 0; tries <= maxTries; tries++) {
       do {
         Real rand_angle = r_rng->Uniform(CRange<Real>(-CRadians::PI.GetValue(), CRadians::PI.GetValue()));
@@ -61,7 +53,7 @@ void ResourceALF::generate(const std::vector<AreaALF>& oth_areas, const Real are
       } while(SquareDistance(pos, CVector2(0,0)) > pow(arena_radius-area_radius, 2));
 
       bool duplicate = false;
-      for(const AreaALF& an_area : all_areas) {
+      for(const AreaALF& an_area : areas) {
         duplicate = SquareDistance(an_area.position, pos) <= pow(area_radius*2,2);
         if(duplicate)
           break;
@@ -70,7 +62,6 @@ void ResourceALF::generate(const std::vector<AreaALF>& oth_areas, const Real are
       if(!duplicate) {
         AreaALF new_area(type, pos, area_radius, initial_population, lambda, eta);
         // add to the areas
-        all_areas.push_back(new_area); // used to avoid duplicates
         areas.push_back(new_area);
         // add area utility to this->population
         this->population += new_area.population;
@@ -87,13 +78,13 @@ void ResourceALF::generate(const std::vector<AreaALF>& oth_areas, const Real are
   }
 }
 
-bool ResourceALF::doStep(const std::vector<CVector2>& kilobot_positions, const std::vector<UInt8> kilobot_states, const std::vector<CColor> kilobot_colors, const std::vector<AreaALF>& oth_areas, const Real arena_radius) {
+bool ResourceALF::doStep(const std::vector<CVector2>& kilobot_positions, const std::vector<m_kilobotstate> kilobot_states, const std::vector<CColor> kilobot_colors) {
   // first update kilobots positions in the areas
   // compute only for those kilobots with the right state
-  // i.e. with the green led on
+  // i.e. with the correct led color on
   for(UInt8 i=0; i<kilobot_positions.size(); ++i) {
-    if(kilobot_states.at(i) == this->type &&
-       kilobot_colors.at(i) == CColor::GREEN) {
+    if(kilobot_states.at(i).resources[this->type] &&
+       kilobot_colors.at(i) == areas.at(0).color) {
       for(AreaALF& area : areas) {
         if(SquareDistance(kilobot_positions.at(i), area.position) < pow(area_radius,2)) {
           area.kilobots_in_area++;
@@ -118,6 +109,5 @@ bool ResourceALF::doStep(const std::vector<CVector2>& kilobot_positions, const s
 
     area.kilobots_in_area = 0;
   }
-
   return population == 0;
 }
