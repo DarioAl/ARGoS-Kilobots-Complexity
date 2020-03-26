@@ -9,6 +9,7 @@ UInt8 debug_counter;
 Real overall_r0_estimate;
 Real overall_distance;
 UInt8 overall_num_messages;
+UInt32 sequential;
 #endif
 
 /****************************************/
@@ -299,16 +300,25 @@ void CComplexityALF::UpdateVirtualSensor(CKilobotEntity &c_kilobot_entity){
 
     m_kilobotstate kilobotState = m_vecKilobotStates[unKilobotID];
     if(kilobotState.resources[0]) {
-      // 4 bits used for resource a (thats why is divided by 17 i.e. 15 slices )
-      tkilobotMessage.m_sType = (UInt8)((resources.at(0).getNormalizedPopulation()*255)/17);
+      // get the correct area
+      for(const AreaALF& area : resources.at(0).areas){
+        // 4 bits used for resource a (thats why is divided by 17 i.e. 15 slices )
+        tkilobotMessage.m_sType = (UInt8)(round(area.population*255.0/17.0));
+      }
     }
     if(kilobotState.resources[1]) {
-      // 4 bits used for resource b (thats why is multiplied by 16)
-      tkilobotMessage.m_sData = (UInt8)((resources.at(1).getNormalizedPopulation()*255)/17) << 6;
+      // get the correct area
+      for(const AreaALF& area : resources.at(1).areas){
+        // 4 bits used for resource a (thats why is divided by 17 i.e. 15 slices )
+        tkilobotMessage.m_sType = (UInt8)round((area.population*255.0/17.0));
+      }
     }
     if(kilobotState.resources[2]) {
-      // 4 bits used for resource c (thats why is divided by 17 i.e. 15 slices )
-      tkilobotMessage.m_sData = tkilobotMessage.m_sData | ((UInt8)((resources.at(2).getNormalizedPopulation()*255)/17) << 2);
+      // get the correct area
+      for(const AreaALF& area : resources.at(2).areas){
+        // 4 bits used for resource a (thats why is divided by 17 i.e. 15 slices )
+        tkilobotMessage.m_sType = (UInt8)round((area.population*255.0/17.0));
+      }
     }
 
     // 2 remaining bits of m_sData are used to store rotation toward the center
@@ -387,7 +397,7 @@ void CComplexityALF::UpdateVirtualSensor(CKilobotEntity &c_kilobot_entity){
 /*********************************************/
 
 void CComplexityALF::PostStep() {
-  if(debug_counter < 81) {
+  if(debug_counter < 250) {
     debug_counter++;
     return;
   }
@@ -398,24 +408,35 @@ void CComplexityALF::PostStep() {
     overall_distance += SquareDistance(GetKilobotPosition(*m_tKilobotEntities[it]), CVector2(0,0));
   }
 
+  //TODO remove next line
+  float ema1=0, ema2=0;
+
   /* Go through kilobots to get other debug info */
-  UInt8 nkbs = (m_tKilobotEntities.size()>3?3:m_tKilobotEntities.size());
+  UInt8 nkbs = m_tKilobotEntities.size();
   for(size_t i=0; i<nkbs; ++i) {
     // sum up all
     overall_r0_estimate += (float)m_tKBs[i].second->ema_resource0/255.0;
+    // TODO remove two lines
+    ema1 += (float)m_tKBs[i].second->ema_resource1/255.0;
+    ema2 += (float)m_tKBs[i].second->ema_resource2/255.0;
   }
 
   // average
   overall_distance = sqrt(overall_distance);
 
   // save to log file
-  m_cOutput << (float)overall_r0_estimate/(float)nkbs << " "
-            << (float)resources.at(0).population/(float)resources.at(0).k << std::endl;
+  //TODO remove last two lines
+  m_cOutput << (float)resources.at(0).population/(float)resources.at(0).k << " "
+            << (float)overall_r0_estimate/(float)nkbs << " "
+            << (float)ema1/(float)nkbs << " "
+            << (float)ema2/(float)nkbs << " "
+            << sequential << std::endl;
   // reset counters
   debug_counter = 0;
   overall_r0_estimate = 0;
   overall_distance = 0;
   overall_num_messages = 0;
+  sequential++;
 }
 
 /****************************************/

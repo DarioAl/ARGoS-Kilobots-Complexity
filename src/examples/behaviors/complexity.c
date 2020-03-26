@@ -106,7 +106,7 @@ bool internal_error = false;
 /* Exponential Moving Average alpha */
 const float ema_alpha = 0.75;
 /* Umin threshold for the kb in 255/16 splice */
-uint8_t umin = 0;
+const uint8_t umin = 0;
 
 /* Variables for Smart Arena messages */
 uint8_t temp_resource_pops[RESOURCES_SIZE]; // temporary local knowledge about resources
@@ -115,12 +115,17 @@ uint8_t resources_pops[RESOURCES_SIZE]; // keep local knowledge about resources
 /*-------------------------------------------------------------------*/
 /* Decision Making                                                   */
 /*-------------------------------------------------------------------*/
+/* system time scale -- a control variable       */
+/* used to increase or decrease the system speed */
+const float tau = 0.25; // one/fourth of the velocity
+
 /* processes variables */
-const float h = 0.4; // determines the spontaneous (i.e. based on own information) processes weight
-const float k = 0.2; // determines the interactive (i.e. kilobot-kilobot) processes weight
+const float h = 1; // determines the spontaneous (i.e. based on own information) processes weight
+const float k = 1; // determines the interactive (i.e. kilobot-kilobot) processes weight
+
 /* explore for a bit, estimate the pop and then take a decision */
 uint32_t last_decision_ticks = 0; /* when last decision was taken */
-uint32_t exploration_ticks = 250; /* take a decision only after exploring the environment */
+const uint32_t exploration_ticks = 250; /* take a decision only after exploring the environment */
 
 /*-------------------------------------------------------------------*/
 /* Communication                                                     */
@@ -138,11 +143,11 @@ uint8_t msg_id = 0;
 message_t interactive_message;
 
 /* for broacasts */
-uint32_t broadcast_ticks = 500;
 uint32_t last_broadcast_ticks = 0;
+const uint32_t broadcast_ticks = 125;
 
 /* messages are valid for valid_util ticks */
-uint32_t valid_until = 250;
+const uint32_t valid_until = 250;
 
 /* buffer for communications */
 /* used both for flooding protocol and for dm */
@@ -153,7 +158,9 @@ uint8_t messages_count;
 
 /*-------------------------------------------------------------------*/
 /* Function for setting the motor speed                              */
-/*-------------------------------------------------------------------*/ void set_motion(motion_t new_motion_type) {if(current_motion_type != new_motion_type ) {
+/*-------------------------------------------------------------------*/
+void set_motion(motion_t new_motion_type) {
+  if(current_motion_type != new_motion_type ) {
     switch( new_motion_type ) {
     case FORWARD:
       spinup_motors();
@@ -183,19 +190,28 @@ uint8_t messages_count;
 
 void exponential_average(uint8_t resource_id, uint8_t resource_pop) {
   // update by using exponential moving averagae to update estimated population
-  resources_pops[resource_id] = resource_pop*(ema_alpha) + resources_pops[resource_id]*(1-ema_alpha);
+  resources_pops[resource_id] = (uint8_t)round(((float)resource_pop*(ema_alpha)) + ((float)resources_pops[resource_id]*(1.0-ema_alpha)));
+
+  // TODO REMOVE
+  // used for different ema values but same resource
+  resources_pops[resource_id+1] = (uint8_t)((float)resource_pop*(0.5)) + ((float)resources_pops[resource_id+1]*(1.0-ema_alpha));
+  resources_pops[resource_id+2] = (uint8_t)((float)resource_pop*(0.25)) + ((float)resources_pops[resource_id+2]*(1.0-ema_alpha));
 
 #ifdef DEBUG_KILOBOT
-  /**** save DEBUG information ****/
+ /**** save DEBUG information ****/
   /* printf("DARIO rp %d - rps %d - ealpha %f \n", resource_pop, resources_pops[resource_id], ema_alpha); */
   /* printf("----------------------------- \n"); */
   /* fflush(stdout); */
-  if(resource_id == 0)
+
+  // TODO uncomment if else
+  /* if(resource_id == 0) */
     debug_info_set(ema_resource0, resources_pops[resource_id]);
-  else if(resource_id == 1)
-    debug_info_set(ema_resource1, resources_pops[resource_id]);
-  else if(resource_id == 2)
-    debug_info_set(ema_resource2, resources_pops[resource_id]);
+  /* else if(resource_id == 1) */
+    // TODO remove + 1
+    debug_info_set(ema_resource1, resources_pops[resource_id+1]);
+  /* else if(resource_id == 2) */
+    // TODO remove + 2
+    debug_info_set(ema_resource2, resources_pops[resource_id+2]);
 #endif
 }
 
@@ -224,8 +240,7 @@ void merge_scan(bool time_window_is_over) {
     }
 
     for(i=0; i<RESOURCES_SIZE; i++) {
-      // only update if non zero
-      if(temp_resource_pops[i] != 0) {
+      if(temp_resource_pops[i]>0) {
         // update by mean of exponential moving average
         exponential_average(i, temp_resource_pops[i]);
       }
@@ -285,13 +300,13 @@ void parse_smart_arena_data(uint8_t data[9], uint8_t kb_position) {
   // store received utility
   // 15 slices of means every 17
   if(ut_a != 0) {
-    temp_resource_pops[0] = (float)ut_a*17;
+    temp_resource_pops[0] = ut_a*17;
   }
   if(ut_b != 0) {
-    temp_resource_pops[1] = (float)ut_b*17;
+    temp_resource_pops[1] = ut_b*17;
   }
   if(ut_c != 0) {
-    temp_resource_pops[2] = (float)ut_c*17;
+    temp_resource_pops[2] = ut_c*17;
   }
 
   // get rotation toward the center (if far from center)
@@ -360,18 +375,16 @@ void message_rx(message_t *msg, distance_measurement_t *d) {
       /* KB interactive message            */
       /* ----------------------------------*/
 
-      // increase messages_count for average estimation
-      messages_count++;
-
       // check received message and merge info and ema
-      uint8_t ores0, ores1, ores2;
-      ores0 = msg->data[3];
-      exponential_average(ores0, 0);
-      ores1 = msg->data[4];
-      exponential_average(ores1, 1);
-      ores2 = msg->data[5];
-      exponential_average(ores2, 2);
-
+      if(msg->data[3] > 0) {
+        exponential_average(0, msg->data[3]);
+      }
+      if(msg->data[4] > 0) {
+        exponential_average(1, msg->data[4]);
+      }
+      if(msg->data[5] > 0) {
+        exponential_average(2, msg->data[5]);
+      }
       // store the message in the buffer for flooding and dm
       // if not stored yet
       if(b_head == NULL) {
@@ -448,7 +461,7 @@ void take_decision() {
       // if over umin threshold
       if(resources_pops[i] > umin) {
         // normalized between 0 and 255
-        processes[i] = resources_pops[i]*h;
+        processes[i] = resources_pops[i]*h*tau;
         sum_committments += processes[i];
       }
     }
@@ -481,7 +494,7 @@ void take_decision() {
       // if over umin threshold
       if(resources_pops[recruiter_state] > umin) {
         // computer recruitment value for current agent
-        processes[RESOURCES_SIZE] = (uint8_t)(resources_pops[recruiter_state]*k);
+        processes[RESOURCES_SIZE] = (uint8_t)(resources_pops[recruiter_state]*k*tau);
       }
     }
 
@@ -522,7 +535,7 @@ void take_decision() {
     uint8_t abandon = 0;
     /* leave immediately if reached the threshold */
     if(resources_pops[current_decision_state] <= umin) {
-      abandon = 255*h;
+      abandon = 255*h*tau;
     }
 
     /****************************************************/
@@ -554,7 +567,7 @@ void take_decision() {
       // if above umin threshold
       if(resources_pops[inhibitor_state] > umin) {
         // computer recruitment value for current agent
-        cross_inhibition = (uint8_t)(resources_pops[inhibitor_state]*k);
+        cross_inhibition = (uint8_t)(resources_pops[inhibitor_state]*k*tau);
       }
     }
 
@@ -669,8 +682,8 @@ void setup() {
   set_motion(FORWARD);
   uint8_t i;
   for(i=0; i<RESOURCES_SIZE; i++) {
-    temp_resource_pops[i] = 1;
-    resources_pops[i] = 1;
+    temp_resource_pops[i] = 0;
+    resources_pops[i] = 0;
   }
 }
 
@@ -699,8 +712,7 @@ void loop() {
     delay(500);
   }
 
-
-  /*
+/*
    * if
    *   it is time to take decision after the exploration the fill up an update message for other kbs
    *   then update utility estimation and take next decision according to the PFSM
@@ -776,66 +788,66 @@ void loop() {
     last_broadcast_ticks = kilo_ticks;
   }
 
-  /* current_decision_state = COMMITTED_AREA_0; */
-  /* // never stop when exploiting the area */
-  /* if(current_arena_state%3 == 0) { */
-  /*   // turn or green led if status is committed and over the area */
-  /*   set_color(RGB(3,0,0)); */
-  /* } else { */
-  /*   // turn on red led if status is committed but still loking for the area */
-  /*   set_color(RGB(3,3,3)); */
-  /* } */
-  /* random_walk(); // looking for the wanted resource */
-
-  /* Now parse the decision and act accordingly */
-  if(current_decision_state != NOT_COMMITTED) {
-    // if over empty, turn on white led to signal committed but not working
-    if(current_arena_state == 255) {
-      // if on empty space avoid if below and set led to white
-      // committed but not on the right resource
-      set_color(RGB(3,3,3));
-
-    } else {
-      // if over the wanted resource turn on the right led color
-      if(current_decision_state == COMMITTED_AREA_0) {
-        // area 0
-        if(current_arena_state%3 == 0) {
-          // area 1 is red
-          set_color(RGB(3,0,0));
-        } else {
-          // turn on white because not on wanted resource
-          set_color(RGB(3,3,3));
-        }
-
-      } else if(current_decision_state == COMMITTED_AREA_1) {
-        // area 1
-        if(current_arena_state == 1 || current_arena_state == 3 ||
-           current_arena_state == 7 || current_arena_state == 21) {
-          // area 1 is green
-          set_color(RGB(0,3,0));
-        } else {
-          // turn on white because not on wanted resource
-          set_color(RGB(3,3,3));
-        }
-
-      } else if(current_decision_state == COMMITTED_AREA_2) {
-        // area 2
-        if(current_arena_state == 2 || current_arena_state == 6 ||
-           current_arena_state == 7 || current_arena_state == 21) {
-          // area 2 is blue
-          set_color(RGB(0,0,3));
-        } else {
-          // turn on white because not on wanted resource
-          set_color(RGB(3,3,3));
-        }
-      }
-    }
+  current_decision_state = COMMITTED_AREA_0;
+  // never stop when exploiting the area
+  if(current_arena_state%3 == 0) {
+    // turn or red led if status is committed and over the area 0
+    set_color(RGB(3,0,0));
   } else {
-    // simply continue as uncommitted and explore
+    // turn on white led if status is committed but still loking for the area
     set_color(RGB(0,0,0));
   }
+  random_walk(); // looking for the wanted resource
+
+  /* /\* Now parse the decision and act accordingly *\/ */
+  /* if(current_decision_state != NOT_COMMITTED) { */
+  /*   // if over empty, turn on white led to signal committed but not working */
+  /*   if(current_arena_state == 255) { */
+  /*     // if on empty space avoid if below and set led to white */
+  /*     // committed but not on the right resource */
+  /*     set_color(RGB(3,3,3)); */
+
+  /*   } else { */
+  /*     // if over the wanted resource turn on the right led color */
+  /*     if(current_decision_state == COMMITTED_AREA_0) { */
+  /*       // area 0 */
+  /*       if(current_arena_state%3 == 0) { */
+  /*         // area 1 is red */
+  /*         set_color(RGB(3,0,0)); */
+  /*       } else { */
+  /*         // turn on white because not on wanted resource */
+  /*         set_color(RGB(3,3,3)); */
+  /*       } */
+
+  /*     } else if(current_decision_state == COMMITTED_AREA_1) { */
+  /*       // area 1 */
+  /*       if(current_arena_state == 1 || current_arena_state == 3 || */
+  /*          current_arena_state == 7 || current_arena_state == 21) { */
+  /*         // area 1 is green */
+  /*         set_color(RGB(0,3,0)); */
+  /*       } else { */
+  /*         // turn on white because not on wanted resource */
+  /*         set_color(RGB(3,3,3)); */
+  /*       } */
+
+  /*     } else if(current_decision_state == COMMITTED_AREA_2) { */
+  /*       // area 2 */
+  /*       if(current_arena_state == 2 || current_arena_state == 6 || */
+  /*          current_arena_state == 7 || current_arena_state == 21) { */
+  /*         // area 2 is blue */
+  /*         set_color(RGB(0,0,3)); */
+  /*       } else { */
+  /*         // turn on white because not on wanted resource */
+  /*         set_color(RGB(3,3,3)); */
+  /*       } */
+  /*     } */
+  /*   } */
+  /* } else { */
+  /*   // simply continue as uncommitted and explore */
+  /*   set_color(RGB(0,0,0)); */
+  /* } */
   // always random walk, never stop even when exploiting
-  random_walk();
+  /* random_walk(); */
 }
 
 int main() {

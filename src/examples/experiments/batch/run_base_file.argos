@@ -5,8 +5,8 @@
     <!-- * General configuration * -->
     <!-- ************************* -->
     <framework>
-        <system threads="6" />
-        <experiment length="1500"
+        <system threads="7" />
+        <experiment length="5000"
         ticks_per_second="10"
         random_seed="__SEED__" />
     </framework>
@@ -55,10 +55,10 @@
             type="0"
             initial_population = "1"
             eta = "0.000"
-            radius="0.08"
-            k="12"
-            lambda="0.0001"
-            exploitation="cubic">
+            radius="0.1"
+            k="10"
+            lambda="0.00001"
+            exploitation="linear"><!-- TODO RIMUOVI 1 ZERI-->
           </resource>
        </environments>
     </loop_functions>

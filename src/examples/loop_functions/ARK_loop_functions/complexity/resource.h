@@ -66,7 +66,7 @@ class ResourceALF {
 
   ResourceALF(UInt8 type, TConfigurationNode& t_tree);
 
-  /* destructor */
+ /* destructor */
   ~ResourceALF(){}
 
   /*
@@ -75,6 +75,7 @@ class ResourceALF {
   inline Real getNormalizedPopulation() {
     return population/k;
   }
+
   /*
    * generate areas for the resource by taking into account all other areas positions
    */
