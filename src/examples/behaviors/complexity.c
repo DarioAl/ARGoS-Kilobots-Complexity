@@ -5,6 +5,7 @@
 // 18+2
 // controlla che il messaggio sia stato mandato tx_succes
 
+
 /*
  * Kilobot control software for a decision making simulation over different resources.
  *
@@ -192,26 +193,18 @@ void exponential_average(uint8_t resource_id, uint8_t resource_pop) {
   // update by using exponential moving averagae to update estimated population
   resources_pops[resource_id] = (uint8_t)round(((float)resource_pop*(ema_alpha)) + ((float)resources_pops[resource_id]*(1.0-ema_alpha)));
 
-  // TODO REMOVE
-  // used for different ema values but same resource
-  resources_pops[resource_id+1] = (uint8_t)((float)resource_pop*(0.5)) + ((float)resources_pops[resource_id+1]*(1.0-ema_alpha));
-  resources_pops[resource_id+2] = (uint8_t)((float)resource_pop*(0.25)) + ((float)resources_pops[resource_id+2]*(1.0-ema_alpha));
-
 #ifdef DEBUG_KILOBOT
  /**** save DEBUG information ****/
   /* printf("DARIO rp %d - rps %d - ealpha %f \n", resource_pop, resources_pops[resource_id], ema_alpha); */
   /* printf("----------------------------- \n"); */
   /* fflush(stdout); */
 
-  // TODO uncomment if else
-  /* if(resource_id == 0) */
+  if(resource_id == 0)
     debug_info_set(ema_resource0, resources_pops[resource_id]);
-  /* else if(resource_id == 1) */
-    // TODO remove + 1
-    debug_info_set(ema_resource1, resources_pops[resource_id+1]);
-  /* else if(resource_id == 2) */
-    // TODO remove + 2
-    debug_info_set(ema_resource2, resources_pops[resource_id+2]);
+  else if(resource_id == 1)
+    debug_info_set(ema_resource1, resources_pops[resource_id]);
+  else if(resource_id == 2)
+    debug_info_set(ema_resource2, resources_pops[resource_id]);
 #endif
 }
 
@@ -791,7 +784,7 @@ void loop() {
   current_decision_state = COMMITTED_AREA_0;
   // never stop when exploiting the area
   if(current_arena_state%3 == 0) {
-    // turn or red led if status is committed and over the area 0
+    // turn on red led if status is committed and over the area 0
     set_color(RGB(3,0,0));
   } else {
     // turn on white led if status is committed but still loking for the area

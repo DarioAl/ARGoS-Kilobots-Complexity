@@ -402,34 +402,25 @@ void CComplexityALF::PostStep() {
     return;
   }
 
-  /* Go through the kilobots to get the positions */
-  for(UInt16 it=0;it< m_tKilobotEntities.size();it++){
-    /* Update the virtual states and actuators of the kilobot*/
-    overall_distance += SquareDistance(GetKilobotPosition(*m_tKilobotEntities[it]), CVector2(0,0));
-  }
-
-  //TODO remove next line
-  float ema1=0, ema2=0;
+  // /* Go through the kilobots to get the positions */
+  // for(UInt16 it=0;it< m_tKilobotEntities.size();it++){
+  //   /* Update the virtual states and actuators of the kilobot*/
+  //   overall_distance += SquareDistance(GetKilobotPosition(*m_tKilobotEntities[it]), CVector2(0,0));
+  // }
 
   /* Go through kilobots to get other debug info */
   UInt8 nkbs = m_tKilobotEntities.size();
   for(size_t i=0; i<nkbs; ++i) {
     // sum up all
     overall_r0_estimate += (float)m_tKBs[i].second->ema_resource0/255.0;
-    // TODO remove two lines
-    ema1 += (float)m_tKBs[i].second->ema_resource1/255.0;
-    ema2 += (float)m_tKBs[i].second->ema_resource2/255.0;
   }
 
   // average
   overall_distance = sqrt(overall_distance);
 
   // save to log file
-  //TODO remove last two lines
   m_cOutput << (float)resources.at(0).population/(float)resources.at(0).k << " "
             << (float)overall_r0_estimate/(float)nkbs << " "
-            << (float)ema1/(float)nkbs << " "
-            << (float)ema2/(float)nkbs << " "
             << sequential << std::endl;
   // reset counters
   debug_counter = 0;
