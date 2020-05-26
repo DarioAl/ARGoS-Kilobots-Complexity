@@ -67,7 +67,7 @@ class AreaALF {
    *
    * @return true if a specific the population value reaches 0
    */
-  bool doStep(std::string exploitation_type);
+  bool doStep(std::string exploitation_type, Real discretization);
 
 };
 

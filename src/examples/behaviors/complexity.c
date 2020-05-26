@@ -63,8 +63,8 @@ motion_t current_motion_type = FORWARD;
 
 /* counters for motion, turning and random_walk */
 const float std_motion_steps = 5*16;
-const float levy_exponent = 2; // 2 is brownian like motion
-const float  crw_exponent = 0.0; // higher more straight
+const float levy_exponent = 2; // 2 is brownian like motion (alpha)
+const float  crw_exponent = 0.0; // higher more straight (rho)
 uint32_t turning_ticks = 0; // keep count of ticks of turning
 const uint8_t max_turning_ticks = 80; /* constant to allow a maximum rotation of 180 degrees with \omega=\pi/5 */
 unsigned int straight_ticks = 0; // keep count of ticks of going straight
@@ -126,7 +126,7 @@ const float k = 1; // determines the interactive (i.e. kilobot-kilobot) processe
 
 /* explore for a bit, estimate the pop and then take a decision */
 uint32_t last_decision_ticks = 0; /* when last decision was taken */
-const uint32_t exploration_ticks = 250; /* take a decision only after exploring the environment */
+const uint32_t exploration_ticks = 100; /* take a decision only after exploring the environment */
 
 /*-------------------------------------------------------------------*/
 /* Communication                                                     */
@@ -145,10 +145,10 @@ message_t interactive_message;
 
 /* for broacasts */
 uint32_t last_broadcast_ticks = 0;
-const uint32_t broadcast_ticks = 125;
+const uint32_t broadcast_ticks = 80;
 
-/* messages are valid for valid_util ticks */
-const uint32_t valid_until = 250;
+/* messages are valid for valid_until ticks */
+const uint32_t valid_until = 200;
 
 /* buffer for communications */
 /* used both for flooding protocol and for dm */

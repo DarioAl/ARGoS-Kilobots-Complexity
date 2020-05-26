@@ -6,9 +6,9 @@
     <!-- ************************* -->
     <framework>
         <system threads="6"/>
-        <experiment length="5000"
+        <experiment length="500"
         ticks_per_second="10"
-        random_seed="1" />
+        random_seed="1"/>
     </framework>
 
     <!-- *************** -->
@@ -35,7 +35,7 @@
     <!-- ****************** -->
     <loop_functions
         library="build/examples/loop_functions/ARK_loop_functions/complexity/libALF_complexity_loop_function"
-        label="ALF_complexity_loop_function" >
+        label="ALF_complexity_loop_function">
 
         <tracking
             position="true"
@@ -63,8 +63,9 @@
             eta="0.000"
             radius="0.1"
             k="10"
-            lambda="0.0001"
-            exploitation="linear">
+            lambda="0.0005"
+            exploitation="quadratic"
+            discretization="1000">
           </resource>
           <!-- <resource -->
           <!--   type="1" -->
@@ -92,7 +93,7 @@
         <distribute>
           <position method="uniform" min="-0.95,-0.95,0" max="0.95,0.95,0" />
             <orientation method="uniform" min="0,0,0" max="360,0,0" />
-            <entity quantity="10" max_trials="100">
+            <entity quantity="100" max_trials="100">
                 <kilobot id="kb">
                     <controller config="listener"/> <dynamics2d friction="0.7" />
                 </kilobot>

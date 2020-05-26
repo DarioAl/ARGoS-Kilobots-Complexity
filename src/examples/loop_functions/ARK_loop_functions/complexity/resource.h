@@ -53,6 +53,7 @@ class ResourceALF {
   /************************************/
   std::string exploitation; /* single area exploitation */
   Real lambda; /* exploitation coefficient for the area */
+  UInt32 discretization; /* euler step */
 
   /* constructor */
   inline ResourceALF() {
@@ -62,6 +63,7 @@ class ResourceALF {
     k = 0;
     area_radius = 0;
     seq_areas_id = 0;
+    discretization = 0;
   }
 
   ResourceALF(UInt8 type, TConfigurationNode& t_tree);
@@ -86,9 +88,11 @@ class ResourceALF {
    * - the population is increased according to a logistic function
    * - the population is exploited according to the kilobots over it
    *
+   * The param discretization is used to synchronize the growth with the simulation ticks
+   *
    * @return true if a specific min value is reached
    */
-  bool doStep(const std::vector<CVector2>& kilobot_positions, const std::vector<m_kilobotstate> kilobot_states, const std::vector<CColor> kilobot_colors);
+  bool doStep(const std::vector<CVector2>& kilobot_positions, const std::vector<m_kilobotstate> kilobot_states, const std::vector<CColor> kilobot_colors, Real ticks_per_second);
 
 };
 

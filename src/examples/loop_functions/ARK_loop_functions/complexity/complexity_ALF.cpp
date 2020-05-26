@@ -57,7 +57,7 @@ void CComplexityALF::Init(TConfigurationNode& t_node) {
   }
 
   // initialize log file
-  m_cOutput << "r0_est_ut, r1_ut, dist, num_msgs" << std::endl;
+  // m_cOutput << "r0_est_ut, r1_ut, dist, num_msgs" << std::endl;
   debug_counter = 0;
   overall_r0_estimate = 0;
   overall_distance = 0;
@@ -92,7 +92,6 @@ void CComplexityALF::SetupInitialKilobotStates() {
     /* Setup the virtual states of a kilobot(e.g. has food state)*/
     SetupInitialKilobotState(*m_tKilobotEntities[it]);
   }
-  std::cout << "exiting  setup initial kb s " << std::endl;
 }
 
 /****************************************/
@@ -198,7 +197,7 @@ void CComplexityALF::GetExperimentVariables(TConfigurationNode& t_tree){
 void CComplexityALF::UpdateVirtualEnvironments() {
   // now do step and eventually generate new areas
   for(ResourceALF& resource : resources) {
-    resource.doStep(m_vecKilobotsPositions, m_vecKilobotStates, m_vecKilobotColors);
+    resource.doStep(m_vecKilobotsPositions, m_vecKilobotStates, m_vecKilobotColors, CPhysicsEngine::GetInverseSimulationClockTick());
   }
 }
 
@@ -397,16 +396,11 @@ void CComplexityALF::UpdateVirtualSensor(CKilobotEntity &c_kilobot_entity){
 /*********************************************/
 
 void CComplexityALF::PostStep() {
-  if(debug_counter < 250) {
+  // every step (tick)
+  if(debug_counter < 9) {
     debug_counter++;
     return;
   }
-
-  // /* Go through the kilobots to get the positions */
-  // for(UInt16 it=0;it< m_tKilobotEntities.size();it++){
-  //   /* Update the virtual states and actuators of the kilobot*/
-  //   overall_distance += SquareDistance(GetKilobotPosition(*m_tKilobotEntities[it]), CVector2(0,0));
-  // }
 
   /* Go through kilobots to get other debug info */
   UInt8 nkbs = m_tKilobotEntities.size();

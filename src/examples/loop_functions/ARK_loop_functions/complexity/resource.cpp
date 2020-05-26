@@ -24,6 +24,8 @@ ResourceALF::ResourceALF(UInt8 type, TConfigurationNode& t_tree) : type(type) {
       GetNodeAttribute(*itNodes, "lambda", this->lambda);
       // type of exploitation
       GetNodeAttribute(*itNodes, "exploitation", this->exploitation);
+      // euler step discretization
+      GetNodeAttribute(*itNodes, "discretization", this->discretization);
 
       // areas of the resource
       this->areas.reserve(k);
@@ -78,7 +80,7 @@ void ResourceALF::generate(const Real arena_radius) {
   }
 }
 
-bool ResourceALF::doStep(const std::vector<CVector2>& kilobot_positions, const std::vector<m_kilobotstate> kilobot_states, const std::vector<CColor> kilobot_colors) {
+bool ResourceALF::doStep(const std::vector<CVector2>& kilobot_positions, const std::vector<m_kilobotstate> kilobot_states, const std::vector<CColor> kilobot_colors, Real ticks_per_second) {
   // first update kilobots positions in the areas
   // compute only for those kilobots with the right state
   // i.e. with the correct led color on
@@ -99,15 +101,18 @@ bool ResourceALF::doStep(const std::vector<CVector2>& kilobot_positions, const s
   population = 0;
   // call the doStep of every area and get the population
   for(AreaALF& area : areas) {
-    // do one step and sum up to resource pop
-    area.doStep(exploitation);
-    population += area.population;
+    // run it to match the wanted discretization
+    for(UInt32 i=0; i<discretization/ticks_per_second; i++){
+      // do one step and sum up to resource pop
+      area.doStep(exploitation, 1.f/discretization);
+    }
 
     if(area.population==0) {
       std::cerr << "\n \n WARNING: an area has reached zero population" << std::endl;
     }
-
+    population += area.population;
     area.kilobots_in_area = 0;
   }
+
   return population == 0;
 }
