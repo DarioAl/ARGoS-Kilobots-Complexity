@@ -18,7 +18,9 @@
 
         <kilobot_controller id="listener">
             <actuators>
-                <differential_steering implementation="default" />
+                <differential_steering implementation="default"
+                 bias_avg="0.00075"
+                 bias_stddev="0.00196" />
                 <kilobot_led implementation="default" />
                 <kilobot_communication implementation="default" />
             </actuators>

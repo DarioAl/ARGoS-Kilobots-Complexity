@@ -62,7 +62,7 @@ typedef enum {
 motion_t current_motion_type = FORWARD;
 
 /* counters for motion, turning and random_walk */
-const float std_motion_steps = 5*16;
+const float std_motion_steps = 20*16; // variance of the gaussian used to compute forward motion
 const float levy_exponent = 2; // 2 is brownian like motion (alpha)
 const float  crw_exponent = 0.0; // higher more straight (rho)
 uint32_t turning_ticks = 0; // keep count of ticks of turning
@@ -303,6 +303,7 @@ void parse_smart_arena_data(uint8_t data[9], uint8_t kb_position) {
   }
 
   // get rotation toward the center (if far from center)
+  // avoid colliding with the wall
   uint8_t rotation_slice = data[2+shift] &0x03;
   if(rotation_slice == 3) {
     rotation_to_center = -M_PI/2;
@@ -601,7 +602,7 @@ void take_decision() {
 /*-------------------------------------------------------------------*/
 
 void random_walk(){
-  /* if the arena signals a rotation, then rotate toward the center */
+  /* if the arena signals a rotation, then rotate toward the center immediately */
   if(rotation_to_center != 0) {
     if(rotation_to_center > 0) {
       set_motion(TURN_RIGHT);
