@@ -5,7 +5,7 @@
     <!-- * General configuration * -->
     <!-- ************************* -->
     <framework>
-        <system threads="4" />
+        <system threads="6" />
         <experiment length="1500"
         ticks_per_second="10"
         random_seed="__SEED__"
@@ -19,7 +19,9 @@
 
         <kilobot_controller id="listener">
             <actuators>
-                <differential_steering implementation="default" />
+        <differential_steering implementation="default"
+          bias_avg="0.00075"
+          bias_stddev="0.00196" />
                 <kilobot_led implementation="default" />
                 <kilobot_communication implementation="default" />
             </actuators>
@@ -59,7 +61,7 @@
             radius="0.1"
             k="__AREAS__"
             lambda="0.0005"
-            exploitation="quadratic"
+            exploitation="linear"
             discretization="1000">
           </resource>
        </environments>

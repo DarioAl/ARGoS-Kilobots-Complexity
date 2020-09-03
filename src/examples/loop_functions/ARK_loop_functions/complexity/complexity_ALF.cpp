@@ -223,9 +223,6 @@ void CComplexityALF::UpdateKilobotState(CKilobotEntity &c_kilobot_entity){
   // update kb position
   m_vecKilobotsPositions[unKilobotID] = GetKilobotPosition(c_kilobot_entity);
 
-  // update kb led color
-  m_vecKilobotColors[unKilobotID] = GetKilobotLedColor(c_kilobot_entity);
-
   // update kb status
   m_kilobotstate m_state;
   m_state.resources[0] = false;
@@ -294,7 +291,7 @@ void CComplexityALF::UpdateVirtualSensor(CKilobotEntity &c_kilobot_entity){
     tkilobotMessage.m_sType = 0;
     tkilobotMessage.m_sData = 0;
 
-    // 10 bits used for the id of the kilobot store in the first 9 bits of the message
+    // 10 bits used for the id of the kilobot
     tkilobotMessage.m_sID = unKilobotID;
 
     m_kilobotstate kilobotState = m_vecKilobotStates[unKilobotID];
@@ -308,15 +305,16 @@ void CComplexityALF::UpdateVirtualSensor(CKilobotEntity &c_kilobot_entity){
     if(kilobotState.resources[1]) {
       // get the correct area
       for(const AreaALF& area : resources.at(1).areas){
-        // 4 bits used for resource a (thats why is divided by 17 i.e. 15 slices )
-        tkilobotMessage.m_sType = (UInt8)round((area.population*255.0/17.0));
+        // 4 bits used for resource b (thats why is divided by 17 i.e. 15 slices )
+        tkilobotMessage.m_sData = (UInt8)(round(area.population*255.0/17.0));
+        tkilobotMessage.m_sData = tkilobotMessage.m_sData << 6;
       }
     }
     if(kilobotState.resources[2]) {
       // get the correct area
       for(const AreaALF& area : resources.at(2).areas){
-        // 4 bits used for resource a (thats why is divided by 17 i.e. 15 slices )
-        tkilobotMessage.m_sType = (UInt8)round((area.population*255.0/17.0));
+        // 4 bits used for resource c (thats why is divided by 17 i.e. 15 slices )
+        tkilobotMessage.m_sData = tkilobotMessage.m_sData | (UInt8)(round(area.population*255.0/17.0)) << 2;
       }
     }
 
@@ -338,7 +336,7 @@ void CComplexityALF::UpdateVirtualSensor(CKilobotEntity &c_kilobot_entity){
         }
         turning_in_msg = 1;
       }
-      tkilobotMessage.m_sData = tkilobotMessage.m_sData + turning_in_msg;
+      tkilobotMessage.m_sData = tkilobotMessage.m_sData | turning_in_msg;
     }
 
     /*  Set the message sending flag to True */

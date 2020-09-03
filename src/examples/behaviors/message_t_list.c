@@ -59,8 +59,7 @@ int mtl_is_message_present(node_t* head, message_t msg) {
   node_t* current = head;
 
   while(current != NULL) {
-    // check for equality comparing the crc
-    fflush(stdout);
+    // check for equality comparing the robot id
     if(current->msg.data[0] == msg.data[0]) {
       return position;
     }

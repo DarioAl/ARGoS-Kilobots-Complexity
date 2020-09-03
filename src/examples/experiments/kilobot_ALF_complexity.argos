@@ -6,7 +6,7 @@
     <!-- ************************* -->
     <framework>
         <system threads="6"/>
-        <experiment length="500"
+        <experiment length="7200"
         ticks_per_second="10"
         random_seed="1"/>
     </framework>
@@ -18,7 +18,7 @@
 
         <kilobot_controller id="listener">
             <actuators>
-                <differential_steering implementation="default"
+               <differential_steering implementation="default"
                  bias_avg="0.00075"
                  bias_stddev="0.00196" />
                 <kilobot_led implementation="default" />
@@ -61,33 +61,34 @@
           <!-- exploitation is the exploitation type for the area          -->
           <resource
             type="0"
-            initial_population = "1"
-            eta="0.000"
-            radius="0.1"
-            k="10"
+            initial_population = "0.1"
+            eta="0.0419358"
+            radius="0.5"
+            k="1"
             lambda="0.0005"
             exploitation="quadratic"
-            discretization="1000">
+            discretization="10">
           </resource>
           <!-- <resource -->
           <!--   type="1" -->
           <!--   initial_population = "1" -->
-          <!--   eta="0.000" -->
+          <!--   eta="0.0419358" -->
           <!--   radius="0.1" -->
-          <!--   k="5" -->
-          <!--   lambda="0.0001" -->
-          <!--   exploitation="cubic"> -->
+          <!--   k="10" -->
+          <!--   lambda="0.0005" -->
+          <!--   exploitation="quadratic" -->
+          <!--   discretization="10"> -->
           <!-- </resource> -->
           <!-- <resource -->
           <!--   type="2" -->
-          <!--   initial_population = "1" -->
-          <!--   eta="0.000" -->
+          <!--   initial_population = "0.1" -->
+          <!--   eta="0.0419358" -->
           <!--   radius="0.1" -->
-          <!--   k="5" -->
-          <!--   lambda="0.0001" -->
-          <!--   exploitation="cubic"> -->
+          <!--   k="10" -->
+          <!--   lambda="0.0005" -->
+          <!--   exploitation="quadratic" -->
+          <!--   discretization="10"> -->
           <!-- </resource> -->
-
        </environments>
     </loop_functions>
 
@@ -95,7 +96,7 @@
         <distribute>
           <position method="uniform" min="-0.95,-0.95,0" max="0.95,0.95,0" />
             <orientation method="uniform" min="0,0,0" max="360,0,0" />
-            <entity quantity="100" max_trials="100">
+            <entity quantity="200" max_trials="100">
                 <kilobot id="kb">
                     <controller config="listener"/> <dynamics2d friction="0.7" />
                 </kilobot>
@@ -126,23 +127,23 @@
     <!-- * Visualization * -->
     <!-- ***************** -->
 
-    <!-- <visualization> -->
-    <!--     <qt-opengl> -->
-    <!--       <camera> -->
-    <!--             <placement idx="0" position="0,0,1" look_at="0,0,0" lens_focal_length="25" /> -->
-    <!--             <placement idx="1" position="0,1,1" look_at="0,0,0" lens_focal_length="15" /> -->
-    <!--             <placement idx="2" position="1,1,1" look_at="0,0,0" lens_focal_length="15" /> -->
-    <!--             <placement idx="3" position="1,0,1" look_at="0,0,0" lens_focal_length="15" /> -->
-    <!--             <placement idx="4" position="1,-1,1" look_at="0,0,0" lens_focal_length="15" /> -->
-    <!--             <placement idx="5" position="0,-1,1" look_at="0,0,0" lens_focal_length="15" /> -->
-    <!--             <placement idx="6" position="-1,-1,1" look_at="0,0,0" lens_focal_length="15" /> -->
-    <!--             <placement idx="7" position="-1,0,1" look_at="0,0,0" lens_focal_length="15" /> -->
-    <!--             <placement idx="8" position="-1,1,1" look_at="0,0,0" lens_focal_length="15" /> -->
-    <!--             <placement idx="9" position="0.0,0.0,0.05" look_at="-0.0,90,0.0" lens_focal_length="20" /> -->
-    <!--         </camera> -->
-    <!--         <!-\- <user_functions library="build/examples/loop_functions/id_loop_functions/libid_loop_functions" -\-> -->
-    <!--         <!-\- label="id_qtuser_functions" /> -\-> -->
-    <!--     </qt-opengl> -->
-    <!-- </visualization> -->
+    <visualization>
+        <qt-opengl>
+          <camera>
+                <placement idx="0" position="0,0,1" look_at="0,0,0" lens_focal_length="25" />
+                <placement idx="1" position="0,1,1" look_at="0,0,0" lens_focal_length="15" />
+                <placement idx="2" position="1,1,1" look_at="0,0,0" lens_focal_length="15" />
+                <placement idx="3" position="1,0,1" look_at="0,0,0" lens_focal_length="15" />
+                <placement idx="4" position="1,-1,1" look_at="0,0,0" lens_focal_length="15" />
+                <placement idx="5" position="0,-1,1" look_at="0,0,0" lens_focal_length="15" />
+                <placement idx="6" position="-1,-1,1" look_at="0,0,0" lens_focal_length="15" />
+                <placement idx="7" position="-1,0,1" look_at="0,0,0" lens_focal_length="15" />
+                <placement idx="8" position="-1,1,1" look_at="0,0,0" lens_focal_length="15" />
+                <placement idx="9" position="0.0,0.0,0.05" look_at="-0.0,90,0.0" lens_focal_length="20" />
+            </camera>
+            <!-- <user_functions library="build/examples/loop_functions/id_loop_functions/libid_loop_functions" -->
+            <!-- label="id_qtuser_functions" /> -->
+        </qt-opengl>
+    </visualization>
 
 </argos-configuration>
