@@ -5,9 +5,13 @@
 
 #include "kilolib.h"
 
+#include <stdlib.h>
+#include <stdio.h>
+#include <stdint.h>
+
 typedef struct msg_node {
   struct msg_node* next;    // the next node in the list
   message_t msg;    // the message structure as for the kb
-  u_int16_t time_stamp;         // the time stamp or eventually ID of the message
+  uint32_t time_stamp;         // the time stamp or eventually ID of the message
   char been_rebroadcasted;  // if the message has been rebroadcasted
 } node_t;

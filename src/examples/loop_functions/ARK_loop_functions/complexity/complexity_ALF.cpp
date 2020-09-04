@@ -223,6 +223,9 @@ void CComplexityALF::UpdateKilobotState(CKilobotEntity &c_kilobot_entity){
   // update kb position
   m_vecKilobotsPositions[unKilobotID] = GetKilobotPosition(c_kilobot_entity);
 
+  // update kb led color
+  m_vecKilobotColors[unKilobotID] = GetKilobotLedColor(c_kilobot_entity);
+
   // update kb status
   m_kilobotstate m_state;
   m_state.resources[0] = false;

@@ -1,6 +1,4 @@
 /** @author Dario Albani */
-#include <stdlib.h>
-#include <stdio.h>
 #include "message_t_list.h"
 
 /* append as tail */
@@ -17,7 +15,7 @@ void mtl_push_back(node_t *head, node_t* new_node) {
 }
 
 /* 0 first element of the list                      */
-void mtl_remove_at(node_t **head, u_int16_t position) {
+void mtl_remove_at(node_t **head, uint16_t position) {
   node_t* current = *head;
   node_t* temp = NULL;
 
@@ -55,7 +53,7 @@ void mtl_remove_at(node_t **head, u_int16_t position) {
 /* return the position of the first node found                   */
 /* 0 first element of the list                      */
 int mtl_is_message_present(node_t* head, message_t msg) {
-  u_int16_t position = 0;
+  uint16_t position = 0;
   node_t* current = head;
 
   while(current != NULL) {
@@ -74,7 +72,7 @@ int mtl_is_message_present(node_t* head, message_t msg) {
 /* 0 first element                                  */
 int mtl_get_first_not_rebroadcasted(node_t* head, node_t** not_rebroadcasted) {
   node_t* current = head;
-  u_int16_t position = 0;
+  uint16_t position = 0;
 
   while(current != NULL) {
     if(current->been_rebroadcasted != 0) {
@@ -88,9 +86,56 @@ int mtl_get_first_not_rebroadcasted(node_t* head, node_t** not_rebroadcasted) {
   return -1;
 }
 
+/* clear old messages from the list */
+/* clear all messages whose time is less than time */
+uint16_t mtl_clean_old(node_t** head, uint32_t time) {
+  node_t* current = *head;
+  node_t* temp = NULL;
+  // keep track of list size while doing this scan
+  uint16_t list_size = 0;
+
+  // empty list
+  if(current != NULL) {
+    // at least the head is there
+    list_size = 1;
+
+    // asking to remove any other node, head is parsed last
+    while(current->next) {
+      // check next one
+      if(current->next->time_stamp < time) {
+        // store next next for linking
+        temp = current->next->next;
+        // free current next
+        free(current->next);
+        // link current and temp
+        current->next = temp;
+      } else {
+        // increase the counter
+        list_size = list_size+1;
+        // update current for the loop
+        current = current->next;
+      }
+    }
+
+    // now at least the head is there
+    // check it
+    current = *head;
+    if(current->time_stamp < time) {
+      // set the head to current next
+      *head = current->next;
+      // free prev head
+      free(current);
+      // decrease the counter
+      list_size = list_size-1;
+    }
+  }
+
+  return list_size;
+}
+
 /* return list size */
-u_int16_t mtl_size(node_t* head) {
-  u_int16_t size = 0;
+uint16_t mtl_size(node_t* head) {
+  uint16_t size = 0;
   node_t* current = head;
 
   while(current) {

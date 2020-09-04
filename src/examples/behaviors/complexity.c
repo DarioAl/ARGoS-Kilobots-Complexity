@@ -122,6 +122,9 @@ bool internal_error = false;
 const float ema_alpha = 0.75;
 /* Umin threshold for the kb in 255/16 splice */
 const uint8_t umin = 153; //0.6
+/* Umax threshold for utility scaling between umin and umax */
+uint8_t umax_temp = 0;
+uint8_t umax = 153;
 
 /* Variables for Smart Arena messages */
 uint8_t resources_pops[RESOURCES_SIZE]; // keep local knowledge about resources
@@ -151,9 +154,6 @@ uint8_t sent_message = 0;
 /* turn this flag on if there is a valid message to send */
 uint8_t to_send_message;
 
-/* unique msg id */
-uint8_t msg_id = 0;
-
 /* current kb message out */
 message_t interactive_message;
 
@@ -167,9 +167,10 @@ const uint32_t valid_until = 5*31;
 /* buffer for communications */
 /* used both for flooding protocol and for dm */
 node_t *b_head = NULL;
+/* list size */
+uint16_t list_size;
 /* count messages from smart arena */
 uint8_t messages_count;
-
 
 /*-------------------------------------------------------------------*/
 /* Function for setting the motor speed                              */
@@ -201,6 +202,12 @@ void set_motion(motion_t new_motion_type) {
   }
 }
 
+//TODO
+// UMAX NON VIENE MAI AGGIORNATO
+// le transizioni funzionano?
+
+
+
 
 /*-------------------------------------------------------------------*/
 /* Merge received information about the population of the area on    */
@@ -211,6 +218,11 @@ void set_motion(motion_t new_motion_type) {
 void exponential_average(uint8_t resource_id, uint8_t resource_pop) {
   // update by using exponential moving averagae to update estimated population
   resources_pops[resource_id] = (uint8_t)round(((float)resource_pop*(ema_alpha)) + ((float)resources_pops[resource_id]*(1.0-ema_alpha)));
+
+  // update umax temp if needd
+  if(resources_pops[resource_id] > umax_temp) {
+    umax_temp = resources_pops[resource_id];
+  }
 
 #ifdef DEBUG_KILOBOT
  /**** save DEBUG information ****/
@@ -252,10 +264,6 @@ void parse_smart_arena_data(uint8_t data[9], uint8_t kb_position) {
   uint8_t ut_b = (data[1+shift] &0x03) << 2 | (data[2+shift] &0xC0) >> 6;
   uint8_t ut_c = (data[2+shift] &0x3C) >> 2;
 
-  if(kilo_uid == 0){
-    printf("ut a %d   ut b %d   ut c %d/n", ut_a, ut_b, ut_c);
-    fflush(stdout);
-  }
   if(ut_a+ut_b+ut_c == 0) {
     // set this up if over no resource
     current_arena_state = 255;
@@ -326,8 +334,6 @@ void message_rx(message_t *msg, distance_measurement_t *d) {
     /* The turning angle is divided in 4 equal slices  */
     /* pi/4 to 3/4pi - 3/4pi to 5/4pi - 5/4pi to 7/4pi */
 
-    // unpack message
-    bool message_received = false;
     // ids are first 10 bits
     int id1 = msg->data[0] << 2 | msg->data[1] >> 6;
     int id2 = msg->data[3] << 2 | msg->data[4] >> 6;
@@ -368,26 +374,28 @@ void message_rx(message_t *msg, distance_measurement_t *d) {
           // do not store
           return;
         }
-
-        // message is new, store it
-        node_t* new_node;
-        new_node = malloc(sizeof(node_t));
-        new_node->msg = *msg;
-        new_node->time_stamp=kilo_ticks;
-        new_node->been_rebroadcasted=false;
-        mtl_push_back(b_head, new_node);
-
-        // check received message and merge info and ema
-        if(msg->data[3] > 0) {
-          exponential_average(0, msg->data[3]);
-        }
-        if(msg->data[4] > 0) {
-          exponential_average(1, msg->data[4]);
-        }
-        if(msg->data[5] > 0) {
-          exponential_average(2, msg->data[5]);
-        }
       }
+
+      // message is new, store it
+      node_t* new_node;
+      new_node = malloc(sizeof(node_t));
+      new_node->msg = *msg;
+      new_node->time_stamp=kilo_ticks;
+      new_node->been_rebroadcasted=false;
+      mtl_push_back(b_head, new_node);
+
+      // check received message and merge info and ema
+      if(msg->data[3] > 0) {
+        exponential_average(0, msg->data[3]);
+      }
+      if(msg->data[4] > 0) {
+        exponential_average(1, msg->data[4]);
+      }
+      if(msg->data[5] > 0) {
+        exponential_average(2, msg->data[5]);
+      }
+      // update umax
+      umax = (uint8_t)round(((float)msg->data[8]*(ema_alpha)) + ((float)umax*(1.0-ema_alpha)));
     }
   } else if(msg->type==120) {
     // kilobot signal id message (only used in ARK to avoid id assignment)
@@ -435,6 +443,19 @@ void message_tx_success() {
 /* Sets ths current_decision var                                     */
 /*-------------------------------------------------------------------*/
 
+// scale ut between umin and umax
+uint8_t getScaledUtility(uint8_t ut) {
+  if(ut < umin || umin >= umax) {
+    return 0;
+  } else if (ut > umax) {
+    return 255;
+  } else {
+    float num = ut - umin;
+    float den = umax - umin;
+    return round(255*(num/den));
+  }
+}
+
 void take_decision() {
   // temp variable used all along to account for quorum sensing
   uint8_t resource_index = 0;
@@ -450,7 +471,7 @@ void take_decision() {
     uint8_t random_resource = rand_soft()%RESOURCES_SIZE;
     if(resources_pops[random_resource] > umin) {
       // normalized between 0 and 255
-      commitment = round(resources_pops[random_resource]*h*tau);
+      commitment = round(getScaledUtility(resources_pops[random_resource])*h*tau);
     }
 
     /****************************************************/
@@ -460,10 +481,10 @@ void take_decision() {
     node_t* recruitment_message = NULL;
     uint8_t recruiter_state = 255;
 
-    // get list size
-    unsigned list_size = mtl_size(b_head);
-    // if list non empty
-    if(list_size > 0) {
+    // if list non empty (computed in the clean right after the call to this)
+    if(list_size == 1) {
+      recruiter_state = b_head->msg.data[1];
+    } else if(list_size > 1) {
       // extract a random node
       uint8_t rand = round(((float)rand_soft()/255.0)*(list_size-1));
       // retrieve the node
@@ -488,7 +509,7 @@ void take_decision() {
       // if over umin threshold
       if(resources_pops[resource_index] > umin) {
         // computer recruitment value for current agent
-        recruitment = floor(resources_pops[resource_index]*k*tau);
+        recruitment = floor(getScaledUtility(resources_pops[resource_index])*k*tau);
       }
     }
 
@@ -559,7 +580,9 @@ void take_decision() {
     // get list size
     unsigned list_size = mtl_size(b_head);
     // if list non empty
-    if(list_size > 0) {
+    if(list_size == 1) {
+      inhibitor_state = b_head->msg.data[1];
+    } else if(list_size > 1) {
       // extract a random node
       uint8_t rand = round(((float)rand_soft()/255.0)*(list_size-1));
       // retrieve the node
@@ -584,7 +607,7 @@ void take_decision() {
       // if above umin threshold
       if(resources_pops[resource_index] > umin) {
         // computer recruitment value for current agent
-        cross_inhibition = (uint8_t)(resources_pops[resource_index]*k*tau);
+        cross_inhibition = (uint8_t)(getScaledUtility(resources_pops[resource_index])*k*tau);
       }
     }
 
@@ -748,10 +771,6 @@ void quorum_sensing() {
 /* Main loop                                                         */
 /*-------------------------------------------------------------------*/
 void loop() {
-  if(kilo_uid == 0){
-    printf("resources are %d %d %d\n", resources_pops[0], resources_pops[1], resources_pops[2]);
-    fflush(stdout);
-  }
   // visual debug. Signal internal decision errors
   // if the kilobots blinks green and blue something was wrong
   while(internal_error) {
@@ -782,9 +801,24 @@ void loop() {
    *   rebroadcast messages
    */
   if(exploration_ticks <= kilo_ticks-last_decision_ticks) {
+    // clean list (remove outdated messages)
+    list_size = mtl_clean_old(&b_head, kilo_ticks-valid_until);
+
+    // temp var for umax update
+    uint8_t temp_decision = current_decision_state;
+
     // it is time to take the next decision
     take_decision();
     quorum_sensing();
+
+    // if I am working and was not on same area before
+    if(current_decision_state < 3 && current_decision_state != temp_decision) {
+      // update umax
+      umax = round(umax_temp*ema_alpha + umax*(1.0-ema_alpha));
+      // reset umax temp
+      umax_temp = 0;
+    }
+
 
     // fill my message before resetting the temp resource count
     // fill up message type. Type 1 used for kbs
@@ -800,9 +834,9 @@ void loop() {
       interactive_message.data[3+res_index] = resources_pops[res_index];
     }
 
-    // last byte used for msg id
-    interactive_message.data[8] = msg_id;
-    msg_id ++; // update the id after
+    // last byte used for umax
+    interactive_message.data[8] = umax;
+
     // fill up the crc
     interactive_message.crc = message_crc(&interactive_message);
 
@@ -813,26 +847,16 @@ void loop() {
     last_decision_ticks = kilo_ticks;
 
   } else if(sent_message && broadcast_ticks <= kilo_ticks-last_broadcast_ticks) {
+    // clean list (remove outdated messages)
+    list_size = mtl_clean_old(&b_head, kilo_ticks-valid_until);
     // get first not rebroadcasted message from flooding buffer
     node_t* not_rebroadcasted = NULL;
-    uint16_t nr_pos = mtl_get_first_not_rebroadcasted(b_head, &not_rebroadcasted);
-    // check if still valid or old
-    while(not_rebroadcasted){
-      if(kilo_ticks-not_rebroadcasted->time_stamp > valid_until ) {
-        // is old, delete
-        not_rebroadcasted = NULL;
-        mtl_remove_at(&b_head, nr_pos);
-        // get next one
-        nr_pos = mtl_get_first_not_rebroadcasted(b_head, &not_rebroadcasted);
-      } else {
-        // got it, break and set it up for rebroadcast
-        not_rebroadcasted->been_rebroadcasted = true;
-        break;
-      }
-    }
+    mtl_get_first_not_rebroadcasted(b_head, &not_rebroadcasted);
 
     // if there is a valid message then set it up for rebroadcast
     if(not_rebroadcasted) {
+      // update the rebroadcasted status in the message
+      not_rebroadcasted->been_rebroadcasted = true;
       // tell that we have a msg to send
       to_send_message = true;
       // set it up for rebroadcast
@@ -871,7 +895,7 @@ else {
 
   /* always random walk, never stop even when exploiting */
   random_walk();
-}
+ }
 
 int main() {
   kilo_init();
