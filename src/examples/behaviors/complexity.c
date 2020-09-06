@@ -137,8 +137,8 @@ uint8_t resources_pops[RESOURCES_SIZE]; // keep local knowledge about resources
 const float tau = 0.5;
 
 /* processes variables */
-const float h = 2; // determines the spontaneous (i.e. based on own information) processes weight
-const float k = 0; // determines the interactive (i.e. kilobot-kilobot) processes weight
+const float h = 0.888888889; // determines the spontaneous (i.e. based on own information) processes weight
+const float k = 0.111111111; // determines the interactive (i.e. kilobot-kilobot) processes weight
 
 /* explore for a bit, estimate the pop and then take a decision */
 /* the time of the kilobot is 31 ticks per second, no matter what time you set in ARGOS */
@@ -149,10 +149,10 @@ const uint32_t exploration_ticks = 5*31; /* take a decision only after exploring
 /* Communication                                                     */
 /*-------------------------------------------------------------------*/
 /* flag for message sent */
-uint8_t sent_message = 0;
+uint8_t sent_message = 1;
 
 /* turn this flag on if there is a valid message to send */
-uint8_t to_send_message;
+uint8_t to_send_message = false;
 
 /* current kb message out */
 message_t interactive_message;
@@ -201,13 +201,6 @@ void set_motion(motion_t new_motion_type) {
     current_motion_type = new_motion_type;
   }
 }
-
-//TODO
-// UMAX NON VIENE MAI AGGIORNATO
-// le transizioni funzionano?
-
-
-
 
 /*-------------------------------------------------------------------*/
 /* Merge received information about the population of the area on    */
@@ -347,6 +340,10 @@ void message_rx(message_t *msg, distance_measurement_t *d) {
       parse_smart_arena_data(msg->data, 2);
     }
   } else if(msg->type==1) {
+    if(kilo_uid==0) {
+      printf("receiving message \n");
+      fflush(stdout);
+    }
     /* get id (always firt byte when coming from another kb) */
     uint8_t id = msg->data[0];
     // check that is a valid crc and another kb
@@ -434,6 +431,8 @@ message_t *message_tx() {
 /*-------------------------------------------------------------------*/
 
 void message_tx_success() {
+    printf("message succesfully sent %d", kilo_uid);
+    fflush(stdout);
   sent_message = 1;
 }
 
@@ -596,8 +595,10 @@ void take_decision() {
       }
     }
 
-    // if the inhibitor is committed or in quorum
-    if(inhibitor_state != 255) {
+    // if the inhibitor is committed or in quorum but not same as us
+    if(inhibitor_state != 255 || inhibitor_state != current_decision_state
+       || (quorum_threshold > 0 && inhibitor_state-3 != current_decision_state)
+       ) {
       /* get the correct index in case of quorum sensing mechanism */
       resource_index = inhibitor_state;
       if(quorum_threshold > 0 && resource_index >= 3) {
@@ -606,7 +607,7 @@ void take_decision() {
       }
       // if above umin threshold
       if(resources_pops[resource_index] > umin) {
-        // computer recruitment value for current agent
+        // compute recruitment value for current agent
         cross_inhibition = (uint8_t)(getScaledUtility(resources_pops[resource_index])*k*tau);
       }
     }
@@ -807,6 +808,7 @@ void loop() {
     // temp var for umax update
     uint8_t temp_decision = current_decision_state;
 
+
     // it is time to take the next decision
     take_decision();
     quorum_sensing();
@@ -847,6 +849,10 @@ void loop() {
     last_decision_ticks = kilo_ticks;
 
   } else if(sent_message && broadcast_ticks <= kilo_ticks-last_broadcast_ticks) {
+    if(kilo_uid==0) {
+      printf("sending broadcast message \n");
+      fflush(stdout);
+    }
     // clean list (remove outdated messages)
     list_size = mtl_clean_old(&b_head, kilo_ticks-valid_until);
     // get first not rebroadcasted message from flooding buffer
@@ -862,7 +868,7 @@ void loop() {
       // set it up for rebroadcast
       interactive_message.type = 1;
       memcpy(interactive_message.data, not_rebroadcasted->msg.data, sizeof(uint8_t));
-      interactive_message.crc = not_rebroadcasted->msg.crc;
+      interactive_message.crc = message_crc(&interactive_message);
     }
 
     // reset flag
@@ -892,6 +898,11 @@ else {
     // simply continue as uncommitted and explore
     set_color(RGB(0,0,0));
   }
+
+#ifdef DEBUG_KILOBOT
+  // store here kilobots decision for debug in ARGoS
+  debug_info_set(decision, current_decision_state);
+#endif
 
   /* always random walk, never stop even when exploiting */
   random_walk();

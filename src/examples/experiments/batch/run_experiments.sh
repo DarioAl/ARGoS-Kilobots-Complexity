@@ -20,9 +20,9 @@ base_dir=`dirname $base_config`
 echo "$CONFIGURATION_FILE" | egrep "^$SHARED_DIR" &> /dev/null || exit 1
 
 areas="10"
-kbs="10 20 30 40 50"
+kbs="60 90"
 eta="0"
-RUNS=50
+RUNS=1
 
 for par1 in $kbs; do
     for par2 in $areas; do
@@ -34,7 +34,7 @@ for par1 in $kbs; do
                 sed -i "s|__SEED__|$it|g" $config
                 sed -i "s|__AREAS__|$par2|g" $config
                 sed -i "s|__KBS__|$par1|g" $config
-                sed -i "s|__ETA__|$par3|g" $config
+                #sed -i "s|__ETA__|$par3|g" $config
                 output_file=$par1"_"$par2"_"$par3"_"$it
                 sed -i "s|__OUTPUT__|$output_file|g" $config
                 echo "Running next configuration KBS $par1 AREAS $par2"

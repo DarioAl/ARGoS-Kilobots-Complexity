@@ -19,6 +19,7 @@ extern "C" {
     uint8_t ema_resource0;
     uint8_t ema_resource1;
     uint8_t ema_resource2;
+    uint8_t decision;
     uint8_t num_messages;
   } debug_info_t;
 

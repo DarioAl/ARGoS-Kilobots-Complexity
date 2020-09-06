@@ -1,6 +1,6 @@
 <?xml version="1.0" ?>
 <argos-configuration>
-    
+
     <!-- ************************* -->
     <!-- * General configuration * -->
     <!-- ************************* -->
@@ -10,12 +10,12 @@
         ticks_per_second="10"
         random_seed="124" />
     </framework>
-    
+
     <!-- *************** -->
     <!-- * Controllers * -->
     <!-- *************** -->
     <controllers>
-        
+
         <kilobot_controller id="listener">
             <actuators>
                 <differential_steering implementation="default"
@@ -25,46 +25,46 @@
                 <kilobot_led implementation="default" />
             </actuators>
             <sensors>
-                <kilobot_communication implementation="default" medium="kilocomm" show_rays="false" />
+                <kilobot_communication implementation="default" medium="kilocomm" show_rays="true" />
             </sensors>
             <params behavior="build/examples/behaviors/clustering" />
         </kilobot_controller>
-        
+
     </controllers>
 
     <!-- ****************** -->
     <!-- * Loop functions * -->
     <!-- ****************** -->
-    <loop_functions 
+    <loop_functions
         library="build/examples/loop_functions/ARK_loop_functions/clustering/libALF_clustering_loop_function"
         label="ALF_clustering_loop_function" >
-    
+
         <tracking
             position="true"
             orientation="false"
             color="false">
         </tracking>
 
-        
+
         <variables
             datafilename="data_file.txt"
-            dataacquisitionfrequency="100"  
+            dataacquisitionfrequency="100"
             environmentplotupdatefrequency="10"
             timeforonemessage="0.05">
         </variables>
-    
+
         <environments>
             <Area position="0,0" radius="0.3" color="255,0,0,255" >
             </Area>
         </environments>
 
-    
+
     </loop_functions>
     <!-- *********************** -->
     <!-- * Arena configuration * -->
     <!-- *********************** -->
     <arena size="2, 2, 4" center="0,0,0.5">
-        
+
         <box id="wall_north" size="2,0.01,0.1" movable="false">
             <body position="0,1,0" orientation="0,0,0" />
         </box>
@@ -87,29 +87,29 @@
                     <controller config="listener"/> <dynamics2d friction="0.7" />
                 </kilobot>
             </entity>
-        </distribute>  
+        </distribute>
 
         <floor id="floor"
         source="loop_functions"
         pixels_per_meter="100" />
-        
+
     </arena>
-    
+
     <!-- ******************* -->
     <!-- * Physics engines * -->
     <!-- ******************* -->
     <physics_engines>
         <dynamics2d id="dyn2d" />
     </physics_engines>
-    
+
     <!-- ********* -->
     <!-- * Media * -->
     <!-- ********* -->
-    
+
     <media>
         <kilobot_communication id="kilocomm" />
     </media>
-    
+
     <!-- ****************** -->
     <!-- * Visualization  * -->
     <!-- ****************** -->
@@ -122,5 +122,5 @@
             </camera>
         </qt-opengl>
     </visualization>
-    
+
 </argos-configuration>

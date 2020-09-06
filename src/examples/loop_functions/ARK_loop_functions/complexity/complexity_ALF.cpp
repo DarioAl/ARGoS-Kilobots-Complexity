@@ -7,6 +7,8 @@
 #ifdef DISTRIBUTION_ESTIMATION
 UInt8 debug_counter;
 Real overall_r0_estimate;
+Real overall_r1_estimate;
+Real overall_r2_estimate;
 Real overall_distance;
 UInt8 overall_num_messages;
 UInt32 sequential;
@@ -405,21 +407,41 @@ void CComplexityALF::PostStep() {
 
   /* Go through kilobots to get other debug info */
   UInt8 nkbs = m_tKilobotEntities.size();
+  UInt8 status[] = {0,0,0,0,0,0,0}; // as for the enum, last element is 255
   for(size_t i=0; i<nkbs; ++i) {
-    // sum up all
+    /* Get kilobot decision state */
+    if(m_tKBs[i].second->decision == 255) {
+      status[6] = status[6]+1;
+    } else {
+      status[m_tKBs[i].second->decision] = status[m_tKBs[i].second->decision]+1;
+    }
+    /* Get kilobot estimate of resource 0 */
     overall_r0_estimate += (float)m_tKBs[i].second->ema_resource0/255.0;
+    overall_r1_estimate += (float)m_tKBs[i].second->ema_resource1/255.0;
+    overall_r2_estimate += (float)m_tKBs[i].second->ema_resource2/255.0;
   }
 
   // average
   overall_distance = sqrt(overall_distance);
 
   // save to log file
+  // pop1 comm1 quor1 pop2 comm2 quor2 pop3 comm3 quor3 uncom step
   m_cOutput << (float)resources.at(0).population/(float)resources.at(0).k << " "
-            << (float)overall_r0_estimate/(float)nkbs << " "
-            << sequential << std::endl;
+            << status[0] << " " << status[3] << " "
+            << (float)resources.at(1).population/(float)resources.at(1).k << " "
+            << status[1] << " " << status[4] << " "
+            << (float)resources.at(2).population/(float)resources.at(2).k << " "
+            << status[2] << " " << status[5] << " "
+            << status[6] << " "
+            << overall_r0_estimate << " "
+            << overall_r1_estimate << " "
+            << overall_r2_estimate << std::endl;
+
   // reset counters
   debug_counter = 0;
   overall_r0_estimate = 0;
+  overall_r1_estimate = 0;
+  overall_r2_estimate = 0;
   overall_distance = 0;
   overall_num_messages = 0;
   sequential++;

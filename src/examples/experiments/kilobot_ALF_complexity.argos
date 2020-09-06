@@ -22,10 +22,9 @@
                  bias_avg="0.00075"
                  bias_stddev="0.00196" />
                 <kilobot_led implementation="default" />
-                <kilobot_communication implementation="default" />
             </actuators>
             <sensors>
-                <kilobot_communication implementation="default" medium="kilocomm"/>
+                <kilobot_communication implementation="default" medium="kilocomm" show_rays="true" />
             </sensors>
             <params behavior="build/examples/behaviors/complexity" />
         </kilobot_controller>
@@ -62,7 +61,7 @@
           <resource
             type="0"
             initial_population = "1"
-            eta="0.0419358"
+            eta="0.00273923"
             radius="0.1"
             k="10"
             lambda="0.0005"
@@ -71,20 +70,20 @@
           </resource>
           <resource
             type="1"
-            initial_population = "0.5"
-            eta="0.0419358"
-            radius="0.5"
-            k="1"
+            initial_population = "1"
+            eta="0.00273923"
+            radius="0.1"
+            k="10"
             lambda="0.0005"
             exploitation="quadratic"
             discretization="10">
           </resource>
           <resource
             type="2"
-            initial_population = "0.1"
-            eta="0.0419358"
-            radius="0.5"
-            k="1"
+            initial_population = "1"
+            eta="0.00273923"
+            radius="0.1"
+            k="10"
             lambda="0.0005"
             exploitation="quadratic"
             discretization="10">
@@ -105,7 +104,7 @@
 
         <floor id="floor"
         source="loop_functions"
-        pixels_per_meter="250" />
+        pixels_per_meter="80" />
     </arena>
 
     <!-- ******************* -->
