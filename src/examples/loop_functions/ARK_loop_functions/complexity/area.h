@@ -55,6 +55,7 @@ class AreaALF {
   std::string exploitation_type; /* determine the exploitation on the area by different kbs */
   Real population; /* Population in the current area */
   Real eta; /* Logistic growth regenerative parameter */
+  Real agentsExploitation; /* Store here last step exploitatino value */
 
   /* constructor */
   AreaALF(UInt8 type, const CVector2& position, Real radius, Real population, Real lambda, Real eta);

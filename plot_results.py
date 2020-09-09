@@ -11,20 +11,17 @@ from numpy import savetxt
 # USAGE: provide folder to scan as input. The folder should contain subfolders for different n
 # FILENAME: NUMBEROFAGENT_*_SEED.txt
 
-# data about resources here
-nagents = [60, 90]
-
-# cycle over folders
-for n in nagents:
+def readData(f):
     # experiments data
     allpops1,allpops2,allpops3 = [],[],[] # all three pops
     allcommitted1,allcommitted2,allcommitted3 = [],[],[] # all three committed
     allquorum1,allquorum2,allquorum3 = [],[],[] # all three quorum
     alluncommitted = []
     alltemp1, alltemp2, alltemp3 = [],[],[] # debug purpose
+    alluts = []
 
     # find all files in the folder
-    foldername = sys.argv[1]+str(n)
+    foldername = sys.argv[1]+f
     print(foldername)
     (_, _, filenames) = next(walk(foldername))
     for filename in filenames:
@@ -34,6 +31,7 @@ for n in nagents:
         quorum1,quorum2,quorum3 = [],[],[] # all three quorum
         uncommitted = []
         temp1, temp2, temp3 = [],[],[] # debug purpose
+        uts = []
 
         # open file and get data
         with open(foldername+"/"+filename) as csv_file:
@@ -42,16 +40,17 @@ for n in nagents:
                 pops1.append(float(row[0]))
                 pops2.append(float(row[3]))
                 pops3.append(float(row[6]))
-                committed1.append(float(row[1])/float(n))
-                committed2.append(float(row[4])/float(n))
-                committed3.append(float(row[7])/float(n))
-                quorum1.append(float(row[2])/float(n))
-                quorum2.append(float(row[5])/float(n))
-                quorum3.append(float(row[8])/float(n))
-                uncommitted.append(float(row[9])/float(n))
-                temp1.append(float(row[10])/float(n))
-                temp2.append(float(row[11])/float(n))
-                temp3.append(float(row[12])/float(n))
+                committed1.append(float(row[1])/90.0)
+                committed2.append(float(row[4])/90.0)
+                committed3.append(float(row[7])/90.0)
+                quorum1.append(float(row[2])/90.0)
+                quorum2.append(float(row[5])/90.0)
+                quorum3.append(float(row[8])/90.0)
+                uncommitted.append(float(row[9])/90.0)
+                temp1.append(float(row[10])/90.0)
+                temp2.append(float(row[11])/90.0)
+                temp3.append(float(row[12])/90.0)
+                uts.append(float(row[13]))
 
         # append to allarrays
         allpops1.append(pops1)
@@ -67,7 +66,7 @@ for n in nagents:
         alltemp1.append(temp1)
         alltemp2.append(temp2)
         alltemp3.append(temp3)
-        break
+        alluts.append(uts)
 
     ###### average and save ######
     avpops1 = np.mean(allpops1, axis=0)
@@ -81,35 +80,77 @@ for n in nagents:
     avquorum3 = np.mean(allquorum3, axis=0)
     avuncommitted = np.mean(alluncommitted, axis=0)
     avtemp1 = np.mean(alltemp1, axis=0)
-    avtemp2 = np.mean(alltemp2, axis=0)
+    avtemp2 = np.std(alltemp1, axis=0)
     avtemp3 = np.mean(alltemp3, axis=0)
+    alluts = np.mean(alluts, axis=0)
+    return [avpops1, avpops2, avpops3], [avcommitted1, avcommitted2, avcommitted3], [avquorum1, avquorum2, avquorum3], avuncommitted,  [avtemp1, avtemp2, avtemp3], alluts[-1]
 
-    f = open(str(n)+'.csv','w')
-    for i in range(len(avpops1)):
-        f.write(str(i)+' '+
-                str(avpops1[i])+' '+str(avcommitted1[i])+' '+str(avquorum1[i])+
-                str(avpops2[i])+' '+str(avcommitted2[i])+' '+str(avquorum2[i])+
-                str(avpops3[i])+' '+str(avcommitted3[i])+' '+str(avquorum3[i])+
-                str(avuncommitted[i]) + ' '
-        )
-    f.close()
 
-    ##### plot #####
-    import matplotlib.pyplot as plt
-    colors = ["r","g","b"]
-    plt.plot(avpops1, label='pop1', color=colors[0])
-    plt.plot(avpops2, label='pop2', color=colors[1])
-    plt.plot(avpops3, label='pop3', color=colors[2])
-    plt.plot(avcommitted1, label='comm1', linestyle='--', color=colors[0])
-    plt.plot(avcommitted2, label='comm2', linestyle='--',color=colors[1])
-    plt.plot(avcommitted3, label='comm3', linestyle='--', color=colors[2])
-    # plt.plot(avquorum1, label='quorum1', linestyle=':', color=colors[0])
-    # plt.plot(avquorum2, label='quorum2', linestyle=':', color=colors[1])
-    # plt.plot(avquorum3, label='quroum3', linestyle=':', color=colors[2])
-    plt.plot(avuncommitted, label='uncommitted', color='black')
-    # plt.plot(avtemp1, label='temp', linestyle=':', color=colors[0])
-    # plt.plot(avtemp2, label='temp', linestyle=':', color=colors[1])
-    # plt.plot(avtemp3, label='temp', linestyle=':', color=colors[2])
-    plt.legend()
 
-    plt.show()
+##################################################
+## data about resources here
+folders = ["90","303030","60300"]
+folders = ["90nunq","90nuq","90unq","90uq"]
+
+titles = ["No Rescaling, No Quorum", "No Rescaling, With Quorum", "With Rescaling, No Quorum", "With Rescaling, With Quorum"]
+##### plot #####
+import matplotlib
+from matplotlib import pyplot as plt
+import matplotlib.colors as colors
+import matplotlib.cm as cmx
+
+# colormap
+colormap = cm = plt.get_cmap('viridis')
+colors = [colormap(0.1), colormap(0.5), colormap(0.9)]
+
+# latex
+from matplotlib import rc
+## for Palatino and other serif fonts use:
+#rc('font',**{'family':'serif','serif':['Palatino']})
+rc('text', usetex=True)
+plt.rc('xtick',labelsize=18)
+plt.rc('ytick',labelsize=18)
+
+# sub plots
+fig, axs = plt.subplots(2, 2,figsize=(15, 8), dpi=200)
+
+ax = axs.flat
+utilities = []
+# cycle over folders
+for i in range(len(folders)):
+    allpops, allcommitted, allquorum, alluncommitted, alltemp, sums= readData(folders[i])
+    utilities.append(sums)
+
+    # plot lines
+    ax[i].plot(allpops[0], label=r'\nu_1', color=colors[0])
+    ax[i].plot(allpops[1], label=r'\nu_2', color=colors[1])
+    ax[i].plot(allpops[2], label=r'\nu_3', color=colors[2])
+    # ax[i].plot(allcommitted[0], label=r'n_1', linestyle=':', color=colors[0])
+    # ax[i].plot(allcommitted[1], label=r'n_2', linestyle=':',color=colors[1])
+    # ax[i].plot(allcommitted[2], label=r'n_3', linestyle=':', color=colors[2])
+    # ax[i].plot(allquorum1[0][0], label='quorum1', linestyle=':', color=colors[0])
+    # ax[i].plot(allquorum2[0][0], label='quorum2', linestyle=':', color=colors[1])
+    # ax[i]plot(allquorum3[0][0], label='quroum3', linestyle=':', color=colors[2])
+    # ax[i].plot(alluncommitted, label=r'u', linestyle=':', color='grey')
+
+    ##### use this for estimation variation when you have more runs
+    # ax[i].plot(alltemp[0], label='temp', linestyle=':', color=colors[2])
+    # ax[i].fill_between(alltemp[0], alltemp[0]-alltemp[1], alltemp[0]+alltemp[1] ,alpha=0.3, facecolor=colors[2])
+
+    # ax[i].plot(alltemp[0], label='temp', linestyle=':', color=colors[0])
+    # ax[i].plot(alltemp[1], label='temp', linestyle=':', color=colors[1])
+    # ax[i].plot(alltemp[2], label='temp', linestyle=':', color=colors[2])
+
+    # labels tuning
+    ax[i].set_title(titles[i], fontsize = 25);
+    ax[i].set_ylabel(r"\nu_i", fontsize = 25)
+    ax[i].set_xlabel(" time (s)", fontsize = 25)
+    ax[i].label_outer()
+    ax[i].set_xlim(0,7200)
+
+fig.subplots_adjust(hspace=0.25)
+fig.subplots_adjust(wspace=0.05)
+# legend
+ax[1].legend(loc='upper right', fontsize = 18)
+
+plt.savefig("lines.pdf", format='pdf', bbox_inches = 'tight')

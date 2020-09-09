@@ -113,18 +113,18 @@ arena_t current_arena_state = OUTSIDE_AREA;
 decision_t current_decision_state = NOT_COMMITTED;
 
 /* quorum sensing variable */
-float quorum_threshold = 0;
+float quorum_threshold = 1;
 
 /* variable to signal internal computation error */
 bool internal_error = false;
 
 /* Exponential Moving Average alpha */
-const float ema_alpha = 0.75;
-/* Umin threshold for the kb in 255/16 splice */
+const float ema_alpha = 0.1;
+/* Umin threshold for the kb in 255/31 splice */
 const uint8_t umin = 153; //0.6
 /* Umax threshold for utility scaling between umin and umax */
-uint8_t umax_temp = 0;
-uint8_t umax = 153;
+uint8_t umax_temp = 255; // do not change!
+uint8_t umax = 255; // do not change!
 
 /* Variables for Smart Arena messages */
 uint8_t resources_pops[RESOURCES_SIZE]; // keep local knowledge about resources
@@ -134,11 +134,11 @@ uint8_t resources_pops[RESOURCES_SIZE]; // keep local knowledge about resources
 /*-------------------------------------------------------------------*/
 /* system time scale -- a control variable       */
 /* used to increase or decrease the system speed */
-const float tau = 0.5;
+const float tau = 1;
 
 /* processes variables */
-const float h = 0.888888889; // determines the spontaneous (i.e. based on own information) processes weight
-const float k = 0.111111111; // determines the interactive (i.e. kilobot-kilobot) processes weight
+const float h = 0.111111111; // determines the spontaneous (i.e. based on own information) processes weight
+const float k = 0.888888889; // determines the interactive (i.e. kilobot-kilobot) processes weight
 
 /* explore for a bit, estimate the pop and then take a decision */
 /* the time of the kilobot is 31 ticks per second, no matter what time you set in ARGOS */
@@ -162,7 +162,7 @@ uint32_t last_broadcast_ticks = 0;
 const uint32_t broadcast_ticks = 31/2;
 
 /* messages are valid for valid_until ticks */
-const uint32_t valid_until = 5*31;
+const uint32_t valid_until = 15*31;
 
 /* buffer for communications */
 /* used both for flooding protocol and for dm */
@@ -253,9 +253,14 @@ void parse_smart_arena_data(uint8_t data[9], uint8_t kb_position) {
   uint8_t shift = kb_position*3;
 
   // get arena state by resource (at max 3 resources allowed in the simulation)
-  uint8_t ut_a = (data[1+shift] &0x3C) >> 2;
-  uint8_t ut_b = (data[1+shift] &0x03) << 2 | (data[2+shift] &0xC0) >> 6;
-  uint8_t ut_c = (data[2+shift] &0x3C) >> 2;
+  uint8_t ut_a = (data[0+shift] &0x01) << 4 | (data[1+shift] &0xF0) >> 4;
+  uint8_t ut_b = (data[1+shift] &0x0F) << 1 | (data[2+shift] &0x80) >> 7;
+  uint8_t ut_c = (data[2+shift] &0x7C) >> 2;
+  /* if(kilo_uid == 0) { */
+  /*   printf("data0 %d data1 %d data2 %d\n", data[0+shift], data[1+shift], data[2+shift]); */
+  /*   printf("ut_a %d ut_b %d ut_c %d\n", ut_a, ut_b, ut_c); */
+  /*   fflush(stdout); */
+  /* } */
 
   if(ut_a+ut_b+ut_c == 0) {
     // set this up if over no resource
@@ -277,17 +282,17 @@ void parse_smart_arena_data(uint8_t data[9], uint8_t kb_position) {
   }
 
   // store received utility
-  // 15 slices of means every 17
+  // 31 slices of means every 8
   if(ut_a) {
-    uint8_t ut = ut_a*17;
+    uint8_t ut = ceil(ut_a*8.2258);
     exponential_average(0, ut);
   }
   if(ut_b) {
-    uint8_t ut = ut_b*17;
+    uint8_t ut = ceil(ut_b*8.2258);
     exponential_average(1, ut);
   }
   if(ut_c) {
-    uint8_t ut = ut_c*17;
+    uint8_t ut = ceil(ut_c*8.2258);
     exponential_average(2, ut);
   }
 
@@ -312,11 +317,11 @@ void message_rx(message_t *msg, distance_measurement_t *d) {
     /* see README.md to understand about ARK messaging */
     /* data has 3x24 bits divided as                   */
     /*  data[0]   data[1]   data[2]                    */
-    /* xxxx xxxx xxaa aabb bbcc ccyy                   */
-    /* x(10) bits used for kilobot id                  */
-    /* a(4) bits used for resource a utility           */
-    /* b(4) bits used for resource b utility           */
-    /* c(4) bits used for resource c utility           */
+    /* xxxx xxxa aaaa bbbb bccc ccyy                   */
+    /* x(7) bits used for kilobot id                  */
+    /* a(5) bits used for resource a utility           */
+    /* b(5) bits used for resource b utility           */
+    /* c(5) bits used for resource c utility           */
     /* y(2) bits used for turing angle                 */
 
     /* How to interpret the data received?             */
@@ -328,9 +333,9 @@ void message_rx(message_t *msg, distance_measurement_t *d) {
     /* pi/4 to 3/4pi - 3/4pi to 5/4pi - 5/4pi to 7/4pi */
 
     // ids are first 10 bits
-    int id1 = msg->data[0] << 2 | msg->data[1] >> 6;
-    int id2 = msg->data[3] << 2 | msg->data[4] >> 6;
-    int id3 = msg->data[6] << 2 | msg->data[7] >> 6;
+    uint16_t id1 = msg->data[0] >> 1;
+    uint16_t id2 = msg->data[3] >> 1;
+    uint16_t id3 = msg->data[6] >> 1;
 
     if(id1 == kilo_uid) {
       parse_smart_arena_data(msg->data, 0);
@@ -340,10 +345,6 @@ void message_rx(message_t *msg, distance_measurement_t *d) {
       parse_smart_arena_data(msg->data, 2);
     }
   } else if(msg->type==1) {
-    if(kilo_uid==0) {
-      printf("receiving message \n");
-      fflush(stdout);
-    }
     /* get id (always firt byte when coming from another kb) */
     uint8_t id = msg->data[0];
     // check that is a valid crc and another kb
@@ -431,8 +432,6 @@ message_t *message_tx() {
 /*-------------------------------------------------------------------*/
 
 void message_tx_success() {
-    printf("message succesfully sent %d", kilo_uid);
-    fflush(stdout);
   sent_message = 1;
 }
 
@@ -527,11 +526,17 @@ void take_decision() {
     }
 
     // a random number to extract next decision
-    int extraction = rand_soft();
+    uint8_t extraction = rand_soft();
 
-    // subtract commitments
-    extraction -= commitment;
-    if(extraction <= 0) {
+    /* if(kilo_uid == 0) { */
+    /*   printf("res 1 %d - 2 %d - 3 %d \n", resources_pops[0], resources_pops[1], resources_pops[2]); */
+    /*   printf("res considered %d %d \n", random_resource, recruiter_state); */
+    /*   printf("in commitment and recruitment: %d, %d, %d\n", commitment, recruitment, extraction); */
+    /* fflush(stdout); */
+    /* } */
+
+    // if the extracted number is less than commitment, then commit
+    if(extraction < commitment) {
       current_decision_state = random_resource;
       if(quorum_threshold > 0) {
         // increment by 3 to set it to quorum
@@ -540,11 +545,12 @@ void take_decision() {
       return;
     }
 
-    // subtract recruitment
-    extraction -= recruitment;
-    if(extraction <= 0) {
+    // subtract commitments
+    extraction = extraction - commitment;
+    // if the extracted number is less than recruitment, then recruited
+    if(extraction < recruitment) {
       current_decision_state = recruiter_state;
-      if(quorum_threshold > 0) {
+      if(quorum_threshold > 0 && recruiter_state < 3) {
         // increment by 3 to set it to quorum
         current_decision_state = current_decision_state + 3;
       }
@@ -596,9 +602,10 @@ void take_decision() {
     }
 
     // if the inhibitor is committed or in quorum but not same as us
-    if(inhibitor_state != 255 || inhibitor_state != current_decision_state
-       || (quorum_threshold > 0 && inhibitor_state-3 != current_decision_state)
-       ) {
+    if(inhibitor_state != NOT_COMMITTED &&
+       current_decision_state != inhibitor_state &&
+       current_decision_state != inhibitor_state+3 &&
+       current_decision_state != inhibitor_state-3) {
       /* get the correct index in case of quorum sensing mechanism */
       resource_index = inhibitor_state;
       if(quorum_threshold > 0 && resource_index >= 3) {
@@ -626,17 +633,24 @@ void take_decision() {
       return;
     }
 
+   /* if(kilo_uid == 0) { */
+   /*    printf("current state %d \n", current_decision_state); */
+   /*    printf("abandon %d \n", abandon); */
+   /*    printf("cross %d \n", cross_inhibition); */
+   /*    fflush(stdout); */
+   /*  } */
+
     // a random number to extract next decision
-    int extraction = rand_soft();
+    uint8_t extraction = rand_soft();
     // subtract abandon
-    extraction -= abandon;
-    if(extraction <= 0) {
-     current_decision_state = NOT_COMMITTED;
+    if(extraction < abandon) {
+      current_decision_state = NOT_COMMITTED;
       return;
     }
+
     // subtract cross-inhibition
-    extraction -= cross_inhibition;
-    if(extraction <= 0) {
+    extraction = extraction - abandon;
+    if(extraction < cross_inhibition) {
       current_decision_state = NOT_COMMITTED;
       return;
     }
@@ -792,6 +806,14 @@ void loop() {
     delay(500);
   }
 
+  // FOR BASELINE ONLY (COMMENT DECISION AND QUORUM AS WELL)
+  /* if(kilo_uid < 30) */
+  /*   current_decision_state = 0; */
+  /* else if(kilo_uid < 60) */
+  /*   current_decision_state = 1; */
+  /* else */
+  /*   current_decision_state = 2; */
+
   /*
    * if
    *   it is time to take decision after the exploration the fill up an update message for other kbs
@@ -849,10 +871,6 @@ void loop() {
     last_decision_ticks = kilo_ticks;
 
   } else if(sent_message && broadcast_ticks <= kilo_ticks-last_broadcast_ticks) {
-    if(kilo_uid==0) {
-      printf("sending broadcast message \n");
-      fflush(stdout);
-    }
     // clean list (remove outdated messages)
     list_size = mtl_clean_old(&b_head, kilo_ticks-valid_until);
     // get first not rebroadcasted message from flooding buffer

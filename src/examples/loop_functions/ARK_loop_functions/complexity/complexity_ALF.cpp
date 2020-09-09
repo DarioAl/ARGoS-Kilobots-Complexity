@@ -276,10 +276,10 @@ void CComplexityALF::UpdateVirtualSensor(CKilobotEntity &c_kilobot_entity){
     /* data has 3x24 bits divided as                   */
     /*  data[0]   data[1]   data[2]                    */
     /* xxxx xxxx xxaa aabb bbcc ccyy                   */
-    /* x(10) bits used for kilobot id                  */
-    /* a(4) bits used for resource a utility           */
-    /* b(4) bits used for resource b utility           */
-    /* c(4) bits used for resource c utility           */
+    /* x(7) bits used for kilobot id                  */
+    /* a(5) bits used for resource a utility           */
+    /* b(5) bits used for resource b utility           */
+    /* c(5) bits used for resource c utility           */
     /* y(2) bits used for turing angle                 */
 
     /* How to interpret the data sent?                 */
@@ -296,30 +296,47 @@ void CComplexityALF::UpdateVirtualSensor(CKilobotEntity &c_kilobot_entity){
     tkilobotMessage.m_sType = 0;
     tkilobotMessage.m_sData = 0;
 
-    // 10 bits used for the id of the kilobot
+    // 7 bits used for the id of the kilobot
     tkilobotMessage.m_sID = unKilobotID;
+    tkilobotMessage.m_sID = tkilobotMessage.m_sID << 3;
 
     m_kilobotstate kilobotState = m_vecKilobotStates[unKilobotID];
     if(kilobotState.resources[0]) {
       // get the correct area
       for(const AreaALF& area : resources.at(0).areas){
-        // 4 bits used for resource a (thats why is divided by 17 i.e. 15 slices )
-        tkilobotMessage.m_sType = (UInt8)(round(area.population*255.0/17.0));
+        if(SquareDistance(area.position, m_vecKilobotsPositions[unKilobotID]) < pow(area.radius, 2)) {
+          // 5 bits used for resource a (thats why is divided by 8 i.e. 31 slices)
+          uint8_t temp = ceil(area.population*31);
+          tkilobotMessage.m_sID = tkilobotMessage.m_sID | (temp >> 2);
+          tkilobotMessage.m_sType = temp << 2;
+          break;
+        }
       }
     }
+
     if(kilobotState.resources[1]) {
       // get the correct area
       for(const AreaALF& area : resources.at(1).areas){
-        // 4 bits used for resource b (thats why is divided by 17 i.e. 15 slices )
-        tkilobotMessage.m_sData = (UInt8)(round(area.population*255.0/17.0));
-        tkilobotMessage.m_sData = tkilobotMessage.m_sData << 6;
+        if(SquareDistance(area.position, m_vecKilobotsPositions[unKilobotID]) < pow(area.radius, 2)) {
+          // 5 bits used for resource b (thats why is divided by 8 i.e. 31 slices )
+          uint8_t temp = ceil(area.population*31);
+          tkilobotMessage.m_sType = tkilobotMessage.m_sType | (temp >> 3);
+          tkilobotMessage.m_sData = temp;
+          tkilobotMessage.m_sData = tkilobotMessage.m_sData << 7;
+          break;
+        }
       }
     }
+
     if(kilobotState.resources[2]) {
       // get the correct area
       for(const AreaALF& area : resources.at(2).areas){
-        // 4 bits used for resource c (thats why is divided by 17 i.e. 15 slices )
-        tkilobotMessage.m_sData = tkilobotMessage.m_sData | (UInt8)(round(area.population*255.0/17.0)) << 2;
+        if(SquareDistance(area.position, m_vecKilobotsPositions[unKilobotID]) < pow(area.radius, 2)) {
+          // 5 bits used for resource c (thats why is divided by 8 i.e. 31 slices )
+          uint8_t temp = ceil(area.population*31);
+          tkilobotMessage.m_sData = tkilobotMessage.m_sData | (temp << 2);
+          break;
+        }
       }
     }
 
@@ -416,9 +433,9 @@ void CComplexityALF::PostStep() {
       status[m_tKBs[i].second->decision] = status[m_tKBs[i].second->decision]+1;
     }
     /* Get kilobot estimate of resource 0 */
-    overall_r0_estimate += (float)m_tKBs[i].second->ema_resource0/255.0;
-    overall_r1_estimate += (float)m_tKBs[i].second->ema_resource1/255.0;
-    overall_r2_estimate += (float)m_tKBs[i].second->ema_resource2/255.0;
+    overall_r0_estimate += (float)m_tKBs[0].second->ema_resource0/255.0;
+    overall_r1_estimate += (float)m_tKBs[0].second->ema_resource1/255.0;
+    overall_r2_estimate += (float)m_tKBs[0].second->ema_resource2/255.0;
   }
 
   // average
@@ -435,7 +452,8 @@ void CComplexityALF::PostStep() {
             << status[6] << " "
             << overall_r0_estimate << " "
             << overall_r1_estimate << " "
-            << overall_r2_estimate << std::endl;
+            << overall_r2_estimate << " "
+            << (resources.at(0).totalExploitation+resources.at(1).totalExploitation+resources.at(2).totalExploitation) << std::endl;
 
   // reset counters
   debug_counter = 0;

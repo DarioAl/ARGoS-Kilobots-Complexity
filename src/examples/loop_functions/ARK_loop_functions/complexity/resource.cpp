@@ -99,6 +99,8 @@ bool ResourceALF::doStep(const std::vector<CVector2>& kilobot_positions, const s
   /* apply exploitation and growth in all areas */
   // reset population
   population = 0;
+  // reset lastStepExploitation
+  lastStepExploitation = 0;
   // call the doStep of every area and get the population
   for(AreaALF& area : areas) {
     // run it to match the wanted discretization
@@ -110,9 +112,15 @@ bool ResourceALF::doStep(const std::vector<CVector2>& kilobot_positions, const s
     if(area.population==0) {
       std::cerr << "\n \n WARNING: an area has reached zero population" << std::endl;
     }
+    // update the population
     population += area.population;
+    // update exploitation of this step
+    lastStepExploitation += area.agentsExploitation;
+    // reset the kilobots in the area
     area.kilobots_in_area = 0;
   }
+  // update total exploitation
+  totalExploitation += lastStepExploitation;
 
   return population == 0;
 }

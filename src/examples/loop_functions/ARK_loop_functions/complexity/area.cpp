@@ -4,6 +4,7 @@ AreaALF::AreaALF(UInt8 type, const CVector2& position, Real radius, Real populat
   type(type), position(position), radius(radius), lambda(lambda), eta(eta){
 
   this->kilobots_in_area = 0; // assume 0 initial kbs
+  this->agentsExploitation = 0; // 0 initial kbs, no exploitation
   this->population = population; // from 0 to 1
 
   this->color.Set(enumColor[type]);
@@ -14,14 +15,14 @@ bool AreaALF::doStep(std::string exploitation_type, Real discretization) {
   /* exploitation */
   // cubic,quadratic o linear w.r.t agents
   if(exploitation_type == "cubic") {
-    population -= population*lambda*pow(kilobots_in_area, 3)*discretization;
+    agentsExploitation = population*lambda*pow(kilobots_in_area, 3)*discretization;
   } else if(exploitation_type == "quadratic") {
-    population -= population*lambda*pow(kilobots_in_area, 2)*discretization;
+    agentsExploitation = population*lambda*pow(kilobots_in_area, 2)*discretization;
   } else {
-    population -= population*lambda*kilobots_in_area*discretization;
+    agentsExploitation = population*lambda*kilobots_in_area*discretization;
   }
 
-  /* growth */
-  population += population*eta*(1-population)*discretization;
+  /* growth and exploitation at the same time*/
+  population += (population*eta*(1-population)*discretization) - agentsExploitation;
   return this->population == 0;
 }

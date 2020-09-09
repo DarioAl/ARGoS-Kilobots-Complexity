@@ -22,6 +22,7 @@
                  bias_avg="0.00075"
                  bias_stddev="0.00196" />
                 <kilobot_led implementation="default" />
+                <kilobot_communication implementation="default" />
             </actuators>
             <sensors>
                 <kilobot_communication implementation="default" medium="kilocomm" show_rays="true" />
@@ -61,7 +62,7 @@
           <resource
             type="0"
             initial_population = "1"
-            eta="0.00273923"
+            eta="0.008424878"
             radius="0.1"
             k="10"
             lambda="0.0005"
@@ -71,7 +72,7 @@
           <resource
             type="1"
             initial_population = "1"
-            eta="0.00273923"
+            eta="0.008424878"
             radius="0.1"
             k="10"
             lambda="0.0005"
@@ -81,7 +82,7 @@
           <resource
             type="2"
             initial_population = "1"
-            eta="0.00273923"
+            eta="0.008424878"
             radius="0.1"
             k="10"
             lambda="0.0005"
@@ -95,7 +96,7 @@
         <distribute>
           <position method="uniform" min="-0.95,-0.95,0" max="0.95,0.95,0" />
             <orientation method="uniform" min="0,0,0" max="360,0,0" />
-            <entity quantity="60" max_trials="100">
+            <entity quantity="90" max_trials="100">
                 <kilobot id="kb">
                     <controller config="listener"/> <dynamics2d friction="0.7" />
                 </kilobot>
@@ -130,16 +131,7 @@
         <qt-opengl>
           <camera>
                 <placement idx="0" position="0,0,1" look_at="0,0,0" lens_focal_length="25" />
-                <placement idx="1" position="0,1,1" look_at="0,0,0" lens_focal_length="15" />
-                <placement idx="2" position="1,1,1" look_at="0,0,0" lens_focal_length="15" />
-                <placement idx="3" position="1,0,1" look_at="0,0,0" lens_focal_length="15" />
-                <placement idx="4" position="1,-1,1" look_at="0,0,0" lens_focal_length="15" />
-                <placement idx="5" position="0,-1,1" look_at="0,0,0" lens_focal_length="15" />
-                <placement idx="6" position="-1,-1,1" look_at="0,0,0" lens_focal_length="15" />
-                <placement idx="7" position="-1,0,1" look_at="0,0,0" lens_focal_length="15" />
-                <placement idx="8" position="-1,1,1" look_at="0,0,0" lens_focal_length="15" />
-                <placement idx="9" position="0.0,0.0,0.05" look_at="-0.0,90,0.0" lens_focal_length="20" />
-            </camera>
+           </camera>
             <!-- <user_functions library="build/examples/loop_functions/id_loop_functions/libid_loop_functions" -->
             <!-- label="id_qtuser_functions" /> -->
         </qt-opengl>

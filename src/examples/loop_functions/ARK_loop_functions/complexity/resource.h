@@ -42,7 +42,11 @@ class ResourceALF {
   UInt64 seq_areas_id; // used to sequentially assign ids to areas
   std::vector<AreaALF> areas; /* areas of the resource */
   Real population; /* Total resource population from 0 to k*/
-
+  /************************************/
+  /*   For Results and Analysis       */
+  /************************************/
+  Real lastStepExploitation;
+  Real totalExploitation;
   /************************************/
   /* area logistic growth             */
   /************************************/
