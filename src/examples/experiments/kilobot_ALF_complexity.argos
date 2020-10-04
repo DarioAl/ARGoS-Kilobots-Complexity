@@ -41,7 +41,7 @@
 
         <tracking
             position="true"
-            orientation="false"
+            orientation="true"
             color="true">
         </tracking>
 
@@ -97,7 +97,7 @@
           <position method="uniform" min="-0.95,-0.95,0" max="0.95,0.95,0" />
             <orientation method="uniform" min="0,0,0" max="360,0,0" />
             <entity quantity="90" max_trials="100">
-                <kilobot id="kb">
+                <kilobot id="kb" communication_range="0.1">
                     <controller config="listener"/> <dynamics2d friction="0.7" />
                 </kilobot>
             </entity>
@@ -127,14 +127,14 @@
     <!-- * Visualization * -->
     <!-- ***************** -->
 
-    <visualization>
-        <qt-opengl>
-          <camera>
-                <placement idx="0" position="0,0,1" look_at="0,0,0" lens_focal_length="25" />
-           </camera>
-            <!-- <user_functions library="build/examples/loop_functions/id_loop_functions/libid_loop_functions" -->
-            <!-- label="id_qtuser_functions" /> -->
-        </qt-opengl>
-    </visualization>
+    <!-- <visualization> -->
+    <!--     <qt-opengl> -->
+    <!--       <camera> -->
+    <!--             <placement idx="0" position="0,0,1" look_at="0,0,0" lens_focal_length="25" /> -->
+    <!--        </camera> -->
+    <!--         <!-\- <user_functions library="build/examples/loop_functions/id_loop_functions/libid_loop_functions" -\-> -->
+    <!--         <!-\- label="id_qtuser_functions" /> -\-> -->
+    <!--     </qt-opengl> -->
+    <!-- </visualization> -->
 
 </argos-configuration>

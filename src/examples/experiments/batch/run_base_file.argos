@@ -6,7 +6,7 @@
     <!-- ************************* -->
     <framework>
         <system threads="8"/>
-        <experiment length="1600"
+        <experiment length="7200"
         ticks_per_second="10"
         random_seed="__SEED__"/>
     </framework>
@@ -41,7 +41,7 @@
 
         <tracking
             position="true"
-            orientation="false"
+            orientation="true"
             color="true">
         </tracking>
 
@@ -62,32 +62,32 @@
           <resource
             type="0"
             initial_population = "1"
-            eta="0.0"
+            eta="0.008424878"
             radius="0.1"
             k="__AREAS__"
-            lambda="0.0000"
+            lambda="0.0005"
             exploitation="quadratic"
             discretization="10">
           </resource>
+            <!-- eta="0.008424878" -->
             <!-- lambda="0.0005" -->
-            <!-- eta="0.00273923" -->
           <resource
             type="1"
             initial_population = "1"
-            eta="0"
+            eta="0.008424878"
             radius="0.1"
             k="__AREAS__"
-            lambda="0.0000"
+            lambda="0.0005"
             exploitation="quadratic"
             discretization="10">
           </resource>
           <resource
             type="2"
             initial_population = "1"
-            eta="0.0"
+            eta="0.008424878"
             radius="0.1"
             k="__AREAS__"
-            lambda="0.0000"
+            lambda="0.0005"
             exploitation="quadratic"
             discretization="10">
           </resource>

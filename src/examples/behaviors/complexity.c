@@ -1,11 +1,3 @@
-//TODO considera di non usare il flooding in reale oppure fallo in quei due secondi
-// usa #ifdef ARGOS_simulator_BUILD
-// ogni tanto fa un broadcast che dice ai kbs di iniziare a parlare (delay nel mandare il messaggio su kb)
-// ark dice di parlare e nel momento in cui dicono smetti di parlare cambia anche stato e fai decisione
-// 18+2
-// controlla che il messaggio sia stato mandato tx_succes
-
-
 /*
  * Kilobot control software for a decision making simulation over different resources.
  *
@@ -50,8 +42,9 @@
 
 // define the resources to be expected in the current simulation
 #define RESOURCES_SIZE 3
-
-
+#ifndef M_PI
+#define M_PI 3.14159
+#endif
 /*-------------------------------------------------------------------*/
 /* Motion Variables                                                  */
 /*-------------------------------------------------------------------*/
@@ -68,18 +61,18 @@ typedef enum {
 motion_t current_motion_type = FORWARD;
 
 /* counters for motion, turning and random_walk */
-const float std_motion_steps = 20*16; // variance of the gaussian used to compute forward motion
+const float std_motion_steps = 10*31; // variance of the gaussian used to compute forward motion
 const float levy_exponent = 2; // 2 is brownian like motion (alpha)
 const float  crw_exponent = 0.0; // higher more straight (rho)
 uint32_t turning_ticks = 0; // keep count of ticks of turning
 const uint8_t max_turning_ticks = 80; /* constant to allow a maximum rotation of 180 degrees with \omega=\pi/5 */
-unsigned int straight_ticks = 0; // keep count of ticks of going straight
-const uint16_t max_straight_ticks = 320;
+uint32_t straight_ticks = 0; // keep count of ticks of going straight
+const uint16_t max_straight_ticks = 2*31;
 uint32_t last_motion_ticks = 0;
 
 // the kb is biased toward the center when close to the border
 float rotation_to_center = 0; // if not 0 rotate toward the center (use to avoid being stuck)
-bool rotating = false; // variable used to cope with wall avoidance (arena borders)
+uint8_t rotating = 0; // variable used to cope with wall avoidance (arena borders)
 
 /*-------------------------------------------------------------------*/
 /* Smart Arena Variables                                             */
@@ -113,17 +106,16 @@ arena_t current_arena_state = OUTSIDE_AREA;
 decision_t current_decision_state = NOT_COMMITTED;
 
 /* quorum sensing variable */
-float quorum_threshold = 1;
+float quorum_threshold = 0;
 
 /* variable to signal internal computation error */
-bool internal_error = false;
+uint8_t internal_error = 0;
 
 /* Exponential Moving Average alpha */
 const float ema_alpha = 0.1;
 /* Umin threshold for the kb in 255/31 splice */
 const uint8_t umin = 153; //0.6
 /* Umax threshold for utility scaling between umin and umax */
-uint8_t umax_temp = 255; // do not change!
 uint8_t umax = 255; // do not change!
 
 /* Variables for Smart Arena messages */
@@ -137,8 +129,8 @@ uint8_t resources_pops[RESOURCES_SIZE]; // keep local knowledge about resources
 const float tau = 1;
 
 /* processes variables */
-const float h = 0.111111111; // determines the spontaneous (i.e. based on own information) processes weight
-const float k = 0.888888889; // determines the interactive (i.e. kilobot-kilobot) processes weight
+const float h = 0.1111111; // determines the spontaneous (i.e. based on own information) processes weight
+const float k = 0.8888889; // determines the interactive (i.e. kilobot-kilobot) processes weight
 
 /* explore for a bit, estimate the pop and then take a decision */
 /* the time of the kilobot is 31 ticks per second, no matter what time you set in ARGOS */
@@ -158,8 +150,18 @@ uint8_t to_send_message = false;
 message_t interactive_message;
 
 /* for broacasts */
-uint32_t last_broadcast_ticks = 0;
-const uint32_t broadcast_ticks = 31/2;
+#ifdef ARGOS_simulator_BUILD
+// in ARGoS we do not need particular communication protocol, we
+// do not care about collission and message propagation
+const uint32_t broadcast_ticks = 0*31; // one message every broadcast_ticks (not the same as below with ARK!)
+uint32_t last_broadcast_ticks = 0; // when last broadcast occurred
+#else
+// with real kilobots we adopt a different message propagation strategy to avoid
+// collision and medium overload
+char release_the_broadcast = 0; // if true, start broadcasting until false
+uint32_t last_release_time = 0; // used to restore the state of the kilobot after freezing it for broadcast
+char first_time_after_release = 0;
+#endif
 
 /* messages are valid for valid_until ticks */
 const uint32_t valid_until = 15*31;
@@ -181,22 +183,22 @@ void set_motion(motion_t new_motion_type) {
     case FORWARD:
       spinup_motors();
       set_motors(kilo_straight_left,kilo_straight_right);
-      rotating = false;
+      rotating = 0;
       break;
     case TURN_LEFT:
       spinup_motors();
       set_motors(kilo_turn_left,0);
-      rotating = true;
+      rotating = 1;
       break;
     case TURN_RIGHT:
       spinup_motors();
       set_motors(0,kilo_turn_right);
-      rotating = true;
+      rotating = 1;
       break;
     case STOP:
     default:
       set_motors(0,0);
-      rotating = false;
+      rotating = 0;
     }
     current_motion_type = new_motion_type;
   }
@@ -212,13 +214,8 @@ void exponential_average(uint8_t resource_id, uint8_t resource_pop) {
   // update by using exponential moving averagae to update estimated population
   resources_pops[resource_id] = (uint8_t)round(((float)resource_pop*(ema_alpha)) + ((float)resources_pops[resource_id]*(1.0-ema_alpha)));
 
-  // update umax temp if needd
-  if(resources_pops[resource_id] > umax_temp) {
-    umax_temp = resources_pops[resource_id];
-  }
-
 #ifdef DEBUG_KILOBOT
- /**** save DEBUG information ****/
+  /**** save DEBUG information ****/
   /* printf("DARIO rp %d - rps %d - ealpha %f \n", resource_pop, resources_pops[resource_id], ema_alpha); */
   /* printf("----------------------------- \n"); */
   /* fflush(stdout); */
@@ -302,7 +299,7 @@ void parse_smart_arena_data(uint8_t data[9], uint8_t kb_position) {
   if(rotation_slice == 3) {
     rotation_to_center = -M_PI/2;
   } else {
-    rotation_to_center = rotation_slice*M_PI/2;
+    rotation_to_center = (float)rotation_slice*M_PI/2;
   }
 }
 
@@ -364,37 +361,53 @@ void message_rx(message_t *msg, distance_measurement_t *d) {
         b_head->next = NULL;
         b_head->time_stamp = kilo_ticks;
         b_head->been_rebroadcasted = false;
-
-      } else {
+     } else {
         // check if it has been parsed before
         // avoid resending same messages over and over again
-        if(mtl_is_message_present(b_head, *msg) >= 0) {
+        if(mtl_is_message_present(b_head, *msg)) {
           // do not store
           return;
         }
-      }
 
-      // message is new, store it
-      node_t* new_node;
-      new_node = malloc(sizeof(node_t));
-      new_node->msg = *msg;
-      new_node->time_stamp=kilo_ticks;
-      new_node->been_rebroadcasted=false;
-      mtl_push_back(b_head, new_node);
+        // message is new, store it
+        node_t* new_node;
+        new_node = malloc(sizeof(node_t));
+        new_node->msg = *msg;
+        new_node->time_stamp=kilo_ticks;
+        new_node->been_rebroadcasted=false;
+        mtl_push_back(b_head, new_node);
 
-      // check received message and merge info and ema
-      if(msg->data[3] > 0) {
-        exponential_average(0, msg->data[3]);
+        // check received message and merge info and ema
+        if(msg->data[3] > 0) {
+          exponential_average(0, msg->data[3]);
+        }
+        if(msg->data[4] > 0) {
+          exponential_average(1, msg->data[4]);
+        }
+        if(msg->data[5] > 0) {
+          exponential_average(2, msg->data[5]);
+        }
+        // update umax
+        umax = (uint8_t)round(((float)msg->data[8]*(ema_alpha)) + ((float)umax*(1.0-ema_alpha)));
       }
-      if(msg->data[4] > 0) {
-        exponential_average(1, msg->data[4]);
-      }
-      if(msg->data[5] > 0) {
-        exponential_average(2, msg->data[5]);
-      }
-      // update umax
-      umax = (uint8_t)round(((float)msg->data[8]*(ema_alpha)) + ((float)umax*(1.0-ema_alpha)));
     }
+#ifndef ARGOS_simulator_BUILD
+  } else if(msg->type == 2 && !release_the_broadcast) { // only used within ARK
+    // save time to restore the variables after
+    last_release_time = kilo_ticks;
+    // time to brodcast
+    release_the_broadcast = 1;
+    // set that is the first time that we received the signal to rebroadcast
+    first_time_after_release = 1;
+  } else if(msg->type == 3 && release_the_broadcast) { // only used within ARK
+    // update variables to restore the kilobot at its previous state
+    last_motion_ticks = last_motion_ticks + kilo_ticks - last_release_time;
+    last_decision_ticks = last_decision_ticks + kilo_ticks - last_release_time;
+    // time to stop the broadcast
+    release_the_broadcast = 0;
+    // set that is the first time that we received the signal to stop rebroadcast
+    first_time_after_release = 1;
+#endif
   } else if(msg->type==120) {
     // kilobot signal id message (only used in ARK to avoid id assignment)
     // note that here the original ARK messages are used hence the id is assigned in the
@@ -417,8 +430,6 @@ message_t *message_tx() {
   if(to_send_message) {
     /* this one is filled in the loop */
     to_send_message = false;
-    /* avoid rebroadcast to overwrite prev message */
-    sent_message = 0;
 
     return &interactive_message;
   } else {
@@ -450,7 +461,7 @@ uint8_t getScaledUtility(uint8_t ut) {
   } else {
     float num = ut - umin;
     float den = umax - umin;
-    return round(255*(num/den));
+    return round((num/den)*255);
   }
 }
 
@@ -467,11 +478,8 @@ void take_decision() {
 
     // if over umin threshold
     uint8_t random_resource = rand_soft()%RESOURCES_SIZE;
-    if(resources_pops[random_resource] > umin) {
-      // normalized between 0 and 255
-      commitment = round(getScaledUtility(resources_pops[random_resource])*h*tau);
-    }
-
+    // normalized between 0 and 255
+    commitment = round(getScaledUtility(resources_pops[random_resource])*h*tau);
     /****************************************************/
     /* recruitment over a random agent                  */
     /****************************************************/
@@ -480,20 +488,15 @@ void take_decision() {
     uint8_t recruiter_state = 255;
 
     // if list non empty (computed in the clean right after the call to this)
-    if(list_size == 1) {
-      recruiter_state = b_head->msg.data[1];
-    } else if(list_size > 1) {
-      // extract a random node
-      uint8_t rand = round(((float)rand_soft()/255.0)*(list_size-1));
-      // retrieve the node
+    if(list_size > 0) {
+      uint8_t rand = rand_soft()%list_size;
       recruitment_message = b_head;
       while(recruitment_message && rand) {
         // set recruiter state
-        recruiter_state = recruitment_message->msg.data[1];
-
         recruitment_message = recruitment_message->next;
         rand = rand-1;
       }
+      recruiter_state = recruitment_message->msg.data[1];
     }
 
     // if the recruiter is committed
@@ -506,7 +509,7 @@ void take_decision() {
       }
       // if over umin threshold
       if(resources_pops[resource_index] > umin) {
-        // computer recruitment value for current agent
+        // compute recruitment value for current agent
         recruitment = floor(getScaledUtility(resources_pops[resource_index])*k*tau);
       }
     }
@@ -516,7 +519,7 @@ void take_decision() {
     /****************************************************/
     /* check if the sum of all processes is below 1 (here 255 since normalize to uint_8) */
     /*                                  STOP                                              */
-    if(commitment+recruitment > 255) {
+    if((uint16_t)commitment+(uint16_t)recruitment > 255) {
 #ifdef DEBUG_KILOBOT
       printf("in commitment and recruitment: %d, %d\n", commitment, recruitment);
       fflush(stdout);
@@ -534,7 +537,6 @@ void take_decision() {
     /*   printf("in commitment and recruitment: %d, %d, %d\n", commitment, recruitment, extraction); */
     /* fflush(stdout); */
     /* } */
-
     // if the extracted number is less than commitment, then commit
     if(extraction < commitment) {
       current_decision_state = random_resource;
@@ -572,7 +574,7 @@ void take_decision() {
 
     /* leave immediately if reached the threshold */
     if(resources_pops[resource_index] <= umin) {
-      abandon = 255*h*tau;
+      abandon = round(255.0*h*tau);
     }
 
     /****************************************************/
@@ -583,22 +585,18 @@ void take_decision() {
     uint8_t inhibitor_state = 255;
 
     // get list size
-    unsigned list_size = mtl_size(b_head);
+    uint16_t list_size = mtl_size(b_head);
     // if list non empty
-    if(list_size == 1) {
-      inhibitor_state = b_head->msg.data[1];
-    } else if(list_size > 1) {
-      // extract a random node
-      uint8_t rand = round(((float)rand_soft()/255.0)*(list_size-1));
-      // retrieve the node
+        // if list non empty (computed in the clean right after the call to this)
+    if(list_size > 0) {
+      uint8_t rand = rand_soft()%list_size;
       cross_message = b_head;
-      while(cross_message && rand>0) {
-        // set inhibitor state
-        inhibitor_state = cross_message->msg.data[1];
-
+      while(cross_message && rand) {
+        // set recruiter state
         cross_message = cross_message->next;
         rand = rand-1;
       }
+      inhibitor_state = cross_message->msg.data[1];
     }
 
     // if the inhibitor is committed or in quorum but not same as us
@@ -623,8 +621,8 @@ void take_decision() {
     /* extraction                                       */
     /****************************************************/
     /* check if the sum of all processes is below 1 (here 255 since normalize to uint_8) */
-    /*                                  STOP                                              */
-    if(abandon+cross_inhibition > 255) {
+    /*                                  STOP                                             */
+    if((uint16_t)abandon+(uint16_t)cross_inhibition > 255) {
 #ifdef DEBUG_KILOBOT
       printf("in abandon plus cross \n");
       fflush(stdout);
@@ -666,9 +664,9 @@ void random_walk(){
   /* if the arena signals a rotation, then rotate toward the center immediately */
   if(rotation_to_center != 0 && !rotating) {
     if(rotation_to_center > 0) {
-      set_motion(TURN_RIGHT);
-    } else {
       set_motion(TURN_LEFT);
+    } else {
+      set_motion(TURN_RIGHT);
     }
     // when too close to the border bias toward center
     float angle = abs(rotation_to_center);
@@ -758,7 +756,7 @@ void quorum_sensing() {
     node_t* temp = b_head;
     // cycle over all messages in the buffer
     while(temp) {
-      // if already consider skip
+      // if already considered skip
       if(!parsed[temp->msg.data[0]]) {
         // if committed or quorum to same resource then we have a friend
         // the following works because 255 for current_decision_state is not an option
@@ -776,126 +774,17 @@ void quorum_sensing() {
       temp = temp->next;
     }
     // compute quorum and eventually switch to committed
-    if(((float)neighbors*quorum_threshold) <= friends) {
+    if(neighbors > 0 && ((float)neighbors*quorum_threshold) <= friends) {
       current_decision_state = current_decision_state-3;
     }
   }
 }
 
-/*-------------------------------------------------------------------*/
-/* Main loop                                                         */
-/*-------------------------------------------------------------------*/
-void loop() {
-  // visual debug. Signal internal decision errors
-  // if the kilobots blinks green and blue something was wrong
-  while(internal_error) {
-    // somewhere over the rainbow....
-    set_color(RGB(3,0,0));
-    delay(500);
-    set_color(RGB(0,3,0));
-    delay(500);
-    set_color(RGB(0,0,3));
-    delay(500);
-    set_color(RGB(3,3,0));
-    delay(500);
-    set_color(RGB(3,0,3));
-    delay(500);
-    set_color(RGB(0,3,3));
-    delay(500);
-    set_color(RGB(3,3,3));
-    delay(500);
-  }
-
-  // FOR BASELINE ONLY (COMMENT DECISION AND QUORUM AS WELL)
-  /* if(kilo_uid < 30) */
-  /*   current_decision_state = 0; */
-  /* else if(kilo_uid < 60) */
-  /*   current_decision_state = 1; */
-  /* else */
-  /*   current_decision_state = 2; */
-
-  /*
-   * if
-   *   it is time to take decision after the exploration the fill up an update message for other kbs
-   *   then update utility estimation and take next decision according to the PFSM
-   *   NOTE this has higher priority w.r.t. the rebroadcast below. There is no check over the sent_message flag
-   * else
-   *   continue the exploration by means of random walk and only use the communication medium to
-   *   rebroadcast messages
-   */
-  if(exploration_ticks <= kilo_ticks-last_decision_ticks) {
-    // clean list (remove outdated messages)
-    list_size = mtl_clean_old(&b_head, kilo_ticks-valid_until);
-
-    // temp var for umax update
-    uint8_t temp_decision = current_decision_state;
-
-
-    // it is time to take the next decision
-    take_decision();
-    quorum_sensing();
-
-    // if I am working and was not on same area before
-    if(current_decision_state < 3 && current_decision_state != temp_decision) {
-      // update umax
-      umax = round(umax_temp*ema_alpha + umax*(1.0-ema_alpha));
-      // reset umax temp
-      umax_temp = 0;
-    }
-
-
-    // fill my message before resetting the temp resource count
-    // fill up message type. Type 1 used for kbs
-    interactive_message.type = 1;
-    // fill up the current kb id
-    interactive_message.data[0] = kilo_uid;
-    // fill up the current states
-    interactive_message.data[1] = current_decision_state;
-    interactive_message.data[2] = current_arena_state;
-    // share my resource pop for all resources
-    uint8_t res_index;
-    for(res_index=0; res_index<RESOURCES_SIZE; res_index++) {
-      interactive_message.data[3+res_index] = resources_pops[res_index];
-    }
-
-    // last byte used for umax
-    interactive_message.data[8] = umax;
-
-    // fill up the crc
-    interactive_message.crc = message_crc(&interactive_message);
-
-    // tell that we have a msg to send
-    to_send_message = true;
-
-    // reset last decision ticks
-    last_decision_ticks = kilo_ticks;
-
-  } else if(sent_message && broadcast_ticks <= kilo_ticks-last_broadcast_ticks) {
-    // clean list (remove outdated messages)
-    list_size = mtl_clean_old(&b_head, kilo_ticks-valid_until);
-    // get first not rebroadcasted message from flooding buffer
-    node_t* not_rebroadcasted = NULL;
-    mtl_get_first_not_rebroadcasted(b_head, &not_rebroadcasted);
-
-    // if there is a valid message then set it up for rebroadcast
-    if(not_rebroadcasted) {
-      // update the rebroadcasted status in the message
-      not_rebroadcasted->been_rebroadcasted = true;
-      // tell that we have a msg to send
-      to_send_message = true;
-      // set it up for rebroadcast
-      interactive_message.type = 1;
-      memcpy(interactive_message.data, not_rebroadcasted->msg.data, sizeof(uint8_t));
-      interactive_message.crc = message_crc(&interactive_message);
-    }
-
-    // reset flag
-    last_broadcast_ticks = kilo_ticks;
-  }
-
-  /* Now parse the decision and act accordingly */
+/* Parse the decision and act accordingly */
+void update_led_status() {
   // if over the wanted resource turn on the right led color
   if(current_decision_state == COMMITTED_AREA_0) {
+    // area 0 is red
     set_color(RGB(3,0,0));
   } else if(current_decision_state == COMMITTED_AREA_1) {
     // area 1 is green
@@ -905,6 +794,8 @@ void loop() {
     set_color(RGB(0,0,3));
   }
 #ifdef ARGOS_simulator_BUILD
+   // in ARGoS a white led is used to signal quorum state
+   // in ARK, due to perceptions errors, this is avoided
    else if(current_decision_state == QUORUM_AREA_0 ||
             current_decision_state == QUORUM_AREA_1 ||
             current_decision_state == QUORUM_AREA_2) {
@@ -921,10 +812,195 @@ else {
   // store here kilobots decision for debug in ARGoS
   debug_info_set(decision, current_decision_state);
 #endif
+}
+
+/*-------------------------------------------------------------------*/
+/* For Brodcast                                                      */
+/*-------------------------------------------------------------------*/
+/* Tell the kilobot to send its own state */
+void send_own_state() {
+    // fill my message before resetting the temp resource count
+    // fill up message type. Type 1 used for kbs
+    interactive_message.type = 1;
+    // fill up the current kb id
+    interactive_message.data[0] = kilo_uid;
+    // fill up the current states
+    interactive_message.data[1] = current_decision_state;
+    interactive_message.data[2] = current_arena_state;
+    // share my resource pop for all resources
+    uint8_t res_index;
+    for(res_index=0; res_index<RESOURCES_SIZE; res_index++) {
+      interactive_message.data[3+res_index] = resources_pops[res_index];
+    }
+
+    // hops count
+    interactive_message.data[6] = 0;
+
+    // last byte used for umax
+    interactive_message.data[8] = umax;
+
+    // fill up the crc
+    interactive_message.crc = message_crc(&interactive_message);
+
+    // tell that we have a msg to send
+    to_send_message = true;
+    // avoid rebroadcast to overwrite prev message
+    sent_message = 0;
+}
+
+/* Ask the kilobot to get a message to rebroadcast */
+void get_message_for_rebroadcast() {
+  // random prob of 20% of sending own message again
+  // this cope with inefficient communication on the real kilobots
+  if(rand_soft() >= 204) {
+    send_own_state();
+    return;
+  }
+
+  // -----------------------------
+  // clean list (remove outdated messages)
+  list_size = mtl_clean_old(&b_head, kilo_ticks-valid_until);
+
+  // get first not rebroadcasted message from flooding buffer
+  node_t* not_rebroadcasted = NULL;
+  not_rebroadcasted = mtl_get_first_not_rebroadcasted(b_head);
+
+  // if there is a valid message then set it up for rebroadcast
+  if(not_rebroadcasted) {
+    // update the rebroadcasted status in the message
+    not_rebroadcasted->been_rebroadcasted = true;
+    // tell that we have a msg to send
+    to_send_message = true;
+    // avoid rebroadcast to overwrite prev message
+    sent_message = 0;
+    // set it up for rebroadcast
+    interactive_message.type = 1;
+    memcpy(interactive_message.data, not_rebroadcasted->msg.data, sizeof(uint8_t));
+    // update hops count for debug
+    interactive_message.data[6] = interactive_message.data[6]+1;
+    // compute crc again
+    interactive_message.crc = message_crc(&interactive_message);
+  }
+
+}
+
+void update_umax(decision_t temp_decision) {
+  // if I am working and was not on same area before
+  if(current_decision_state < 3 && current_decision_state != temp_decision) {
+    // take the maximum population
+    uint8_t t_max = resources_pops[0];
+    if(t_max < resources_pops[1]) t_max = resources_pops[1];
+    if(t_max < resources_pops[2]) t_max = resources_pops[2];
+
+    // update umax
+    umax = round(t_max*ema_alpha + umax*(1.0-ema_alpha));
+  if(kilo_uid == 0)
+    printf("umax %d \n", umax);
+  }
+}
+
+/*-------------------------------------------------------------------*/
+/* Main loop                                                         */
+/*-------------------------------------------------------------------*/
+void loop() {
+#ifndef ARGOS_simulator_BUILD
+/*
+ * if ARK is signaling to rebroacast, then the kilobots stops what they are doing and start rebroadcasting
+ * until ARK signals otherwise (message type 2 and 3 are used for these operations)
+ */
+  if(release_the_broadcast) {
+    if(first_time_after_release) {
+     send_own_state();
+     first_time_after_release = 0;
+    } else if(sent_message) {
+      get_message_for_rebroadcast();
+    }
+
+    // stop moving
+    set_motion(STOP);
+    // signal broadcast using a white led (this will not be recognized by ARK)
+    set_color(RGB(3,3,3));
+
+    // do not do anything else (freeze)
+    return;
+  }
+
+  if(first_time_after_release) {
+    first_time_after_release = 0;
+
+    // stop sending messages
+    to_send_message = 0;
+
+    // temp var for umax update
+    uint8_t temp_decision = current_decision_state;
+
+    // it is time to take the next decision
+    take_decision();
+    quorum_sensing();
+    update_led_status();
+    update_umax(temp_decision);
+ }
+#else /* end ndef ARGOS_simulator_BUILD */
+
+#ifdef DEBUG_KILOBOT
+  // store the number of different messages received (for debug purposes)
+  // avoid considering same neighbor
+  char parsed[255] = {0};
+  uint8_t different = 0;
+
+  node_t* temp = b_head;
+  // cycle over all messages in the buffer
+  while(temp) {
+    // if already considered skip
+    if(!parsed[temp->msg.data[0]]) {
+      // if committed or quorum to same resource then we have a friend
+      // the following works because 255 for current_decision_state is not an option
+      different++;
+      // set has parsed
+      parsed[temp->msg.data[0]] = 1;
+    }
+    // increment temp
+    temp = temp->next;
+  }
+  // store here kilobots decision for debug in ARGoS
+  debug_info_set(num_messages, different);
+#endif
+
+   /*
+   * if it is time to take decision after the exploration the fill up an update message for other kbs
+   * then update utility estimation and take next decision according to the PFSM
+   */
+  if(exploration_ticks <= kilo_ticks-last_decision_ticks) {
+    // clean list (remove outdated messages)
+    list_size = mtl_clean_old(&b_head, kilo_ticks-valid_until);
+
+    // temp var for umax update
+    uint8_t temp_decision = current_decision_state;
+
+    // it is time to take the next decision
+    take_decision();
+    quorum_sensing();
+    update_led_status();
+
+    // sent my own state to other
+    send_own_state();
+
+    // update umax
+    update_umax(temp_decision);
+
+    // reset last decision ticks
+    last_decision_ticks = kilo_ticks;
+
+  } else if(sent_message && broadcast_ticks <= kilo_ticks-last_broadcast_ticks) {
+    get_message_for_rebroadcast();
+    // reset flag for time
+    last_broadcast_ticks = kilo_ticks;
+  }
+#endif /* end ARGOS_simulator_BUILD */
 
   /* always random walk, never stop even when exploiting */
   random_walk();
- }
+}
 
 int main() {
   kilo_init();
